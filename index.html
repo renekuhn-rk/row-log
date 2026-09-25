@@ -2,192 +2,534 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PM5 Test</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Frankfurt → Ribeira</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
-  body { font-family: system-ui, sans-serif; background:#111; color:#eee; margin:0; padding:20px; text-align:center; }
-  #status { display:inline-block; padding:6px 14px; border-radius:20px; background:#933; font-weight:600; }
-  #status.on { background:#2a7; }
-  #dist { font-size:64px; font-weight:700; margin:24px 0 4px; }
-  .sub { color:#999; margin-bottom:16px; }
-  button { font-size:18px; padding:14px 28px; border:0; border-radius:10px; background:#38f; color:#fff; margin:4px; }
-  button:disabled { background:#555; }
-  pre { text-align:left; background:#000; padding:10px; border-radius:8px; font-size:12px; max-height:180px; overflow:auto; }
-  .totals { margin:20px 0; padding:16px; background:#1c1c1c; border-radius:10px; }
-  .totals .big { font-size:36px; font-weight:700; color:#4f9; }
-  .totals .lbl { color:#999; font-size:13px; text-transform:uppercase; letter-spacing:1px; }
+  :root { color-scheme: dark; }
+  html, body { height:100%; margin:0; background:#0b0b0c; }
+  body { font-family: -apple-system, system-ui, sans-serif; color:#eee; }
+  #map { position:absolute; inset:0; background:#0b0b0c; }
+  #map .leaflet-control-attribution { background:rgba(0,0,0,0.5); color:#aaa; }
+  #map .leaflet-control-attribution a { color:#8cf; }
+
+  #panel {
+    position:absolute; left:0; right:0; bottom:0; z-index:1000;
+    background:rgba(18,18,20,0.92); backdrop-filter: blur(10px);
+    border-radius:18px 18px 0 0;
+    padding:14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -4px 24px rgba(0,0,0,0.5);
+    max-height:60vh; overflow-y:auto;
+  }
+  #topbar {
+    position:absolute; top:0; left:0; right:0; z-index:1000;
+    padding: calc(10px + env(safe-area-inset-top,0px)) 14px 10px;
+    display:flex; justify-content:space-between; align-items:center;
+    background:linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+  }
+  #statusPill { padding:5px 12px; border-radius:20px; background:#5a2323; font-size:13px; font-weight:600; }
+  #statusPill.on { background:#1f6b3a; }
+  #connectBtn {
+    font-size:14px; padding:9px 16px; border:0; border-radius:10px;
+    background:#2f7de1; color:#fff; font-weight:600;
+  }
+  #connectBtn:disabled { background:#444; color:#999; }
+
+  .row { display:flex; justify-content:space-between; align-items:baseline; margin:6px 0; }
+  .big { font-size:34px; font-weight:700; color:#5fd3a0; }
+  .lbl { color:#999; font-size:12px; text-transform:uppercase; letter-spacing:0.5px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:10px 0; }
+  .card { background:rgba(255,255,255,0.05); border-radius:12px; padding:10px 12px; }
+  .overflow-badge { background:#7a4a00; color:#ffd28a; padding:4px 10px; border-radius:8px; font-size:12px; display:inline-block; margin-top:4px; }
+  .waypoint { font-size:14px; color:#bcd; margin-top:2px; }
+
+  .btnrow { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .btnrow button {
+    flex:1; min-width:110px; font-size:13px; padding:9px 10px; border:0; border-radius:9px;
+    background:#2a2a2e; color:#ddd;
+  }
+  .btnrow button.danger { background:#5a2323; color:#ffb; }
+  .btnrow button.accent { background:#2f7de1; color:#fff; }
+
+  details { margin-top:12px; }
+  summary { cursor:pointer; color:#888; font-size:12px; }
+  pre#log { background:#000; padding:8px; border-radius:8px; font-size:11px; max-height:140px; overflow:auto; margin-top:6px; }
+
+  .marker-dot {
+    width:14px; height:14px; border-radius:50%;
+    background:#5fd3a0; border:2px solid #0b0b0c;
+    box-shadow:0 0 10px 3px rgba(95,211,160,0.7);
+  }
 </style>
 </head>
 <body>
-  <h2>Concept2 PM5 test</h2>
-  <div id="status">Disconnected</div>
-  <div id="dist">-- m</div>
-  <div class="sub">Elapsed: <span id="time">--</span></div>
-  <button id="btn">Connect to PM5</button>
 
-  <div class="totals">
-    <div class="lbl">All-time total</div>
-    <div class="big"><span id="totalDist">0</span> m</div>
-    <div class="lbl" style="margin-top:8px;">Total time</div>
-    <div id="totalTime">0:00:00</div>
-    <button id="resetBtn" style="background:#833; font-size:13px; padding:6px 12px; margin-top:10px;">Reset saved totals</button>
+<div id="map"></div>
+
+<div id="topbar">
+  <div id="statusPill">Disconnected</div>
+  <button id="connectBtn">Connect to PM5</button>
+</div>
+
+<div id="panel">
+  <div class="row">
+    <div>
+      <div class="lbl">Total distance</div>
+      <div class="big"><span id="totalDist">0</span> m</div>
+    </div>
+    <div style="text-align:right;">
+      <div class="lbl">Total time</div>
+      <div id="totalTime" style="font-size:20px;">0:00:00</div>
+    </div>
+  </div>
+  <div id="overflowWrap"></div>
+  <div class="waypoint" id="waypointText"></div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="lbl">This session</div>
+      <div id="sessDist">0 m</div>
+      <div id="sessTime">0:00</div>
+    </div>
+    <div class="card">
+      <div class="lbl">Live</div>
+      <div id="livePace">-- /500m</div>
+      <div id="liveSpm">-- spm</div>
+    </div>
   </div>
 
-  <pre id="log"></pre>
+  <div class="btnrow">
+    <button id="endBtn">End session</button>
+    <button id="exportBtn">Export JSON</button>
+    <button id="importBtn">Import JSON</button>
+    <button id="resetBtn" class="danger">Reset all data</button>
+  </div>
 
+  <details>
+    <summary>Debug log</summary>
+    <pre id="log"></pre>
+  </details>
+</div>
+
+<input type="file" id="importFile" accept="application/json" hidden>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
-// UUIDs from Concept2 PM Bluetooth Smart Interface Definition rev 1.30
-const uuid = id => `ce06${id}-43e5-11e4-916c-0800200c9a66`;
-const ROWING_SERVICE = uuid('0030');
-const GENERAL_STATUS = uuid('0031');
-const DISCOVERY_SERVICE = uuid('0000');
-
+'use strict';
 const $ = id => document.getElementById(id);
-const log = m => { $('log').textContent += m + '\n'; $('log').scrollTop = 1e9; };
+const log = m => { const el = $('log'); el.textContent += m + '\n'; el.scrollTop = 1e9; };
 
-function setStatus(on, text) {
-  $('status').textContent = text;
-  $('status').className = on ? 'on' : '';
-}
+/* =========================================================================
+   STORAGE — versioned keys. Sessions log is the source of truth; totals are
+   always derived by summing it, never stored redundantly. The route file is
+   NOT referenced from storage anywhere, so swapping route.gpx later never
+   touches saved progress.
+   ========================================================================= */
+const SESSIONS_KEY = 'pm5_sessions_v1';
+const PENDING_KEY  = 'pm5_pending_v1';
+const LEGACY_TOTALS_KEY = 'pm5_totals_v1'; // from the very first prototype
 
-// 3-byte little-endian helper
-const u24 = (dv, o) => dv.getUint8(o) | (dv.getUint8(o+1) << 8) | (dv.getUint8(o+2) << 16);
-
-// ---- Persistence ----
-// PM5 distance/time reset to 0 whenever a new row is started on the machine.
-// We keep a running "baseline" (saved total from all previous sessions) and
-// add the current session's live numbers on top, so a reset never erases history.
-const STORAGE_KEY = 'pm5_totals_v1';
-
-function loadTotals() {
+function loadSessions() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(SESSIONS_KEY);
     if (raw) return JSON.parse(raw);
-  } catch (e) { log('Storage read failed: ' + e.message); }
-  return { distance: 0, time: 0 }; // meters, seconds
+  } catch (e) { log('sessions read failed: ' + e.message); }
+  return [];
 }
-
-function saveTotals(t) {
+function saveSessions(list) {
+  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(list)); }
+  catch (e) { log('sessions save failed: ' + e.message); }
+}
+function loadPending() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(t));
-  } catch (e) { log('Storage save failed: ' + e.message); }
+    const raw = localStorage.getItem(PENDING_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) { log('pending read failed: ' + e.message); }
+  return null;
+}
+function savePending(p) {
+  try {
+    if (p) localStorage.setItem(PENDING_KEY, JSON.stringify(p));
+    else localStorage.removeItem(PENDING_KEY);
+  } catch (e) { log('pending save failed: ' + e.message); }
 }
 
-let baseline = loadTotals();      // committed totals from prior sessions
-let lastLiveDist = 0;             // last distance value seen this session
-let lastLiveTime = 0;             // last elapsed time value seen this session
-let saveTimer = null;
+let sessions = loadSessions();
+
+// One-time migration from the old single-number prototype, so early test
+// rows aren't thrown away by the schema change.
+(function migrateLegacy() {
+  if (sessions.length) return;
+  try {
+    const raw = localStorage.getItem(LEGACY_TOTALS_KEY);
+    if (!raw) return;
+    const old = JSON.parse(raw);
+    if (old && old.distance > 0) {
+      sessions.push({
+        id: 'legacy-' + Date.now(),
+        startTime: null, endTime: Date.now(),
+        distance: old.distance, duration: old.time,
+        avgPace: null, avgStrokeRate: null, calories: null,
+        dragFactor: null, heartRateEnd: null,
+        cumulativeDistanceAfter: old.distance,
+        note: 'Imported from earlier prototype version'
+      });
+      saveSessions(sessions);
+      log('Migrated legacy totals: ' + old.distance.toFixed(0) + ' m');
+    }
+    localStorage.removeItem(LEGACY_TOTALS_KEY);
+  } catch (e) { log('legacy migration failed: ' + e.message); }
+})();
+
+function totalDistance() { return sessions.reduce((s, x) => s + x.distance, 0); }
+function totalDuration() { return sessions.reduce((s, x) => s + x.duration, 0); }
 
 function fmtHMS(sec) {
-  sec = Math.floor(sec);
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
+  sec = Math.max(0, Math.floor(sec));
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
   return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
-
-function renderTotals(liveDist, liveTime) {
-  const totalDist = baseline.distance + liveDist;
-  const totalTime = baseline.time + liveTime;
-  $('totalDist').textContent = totalDist.toFixed(0);
-  $('totalTime').textContent = fmtHMS(totalTime);
+function fmtPace(sec) {
+  if (sec == null || !isFinite(sec) || sec <= 0) return '--:--';
+  const m = Math.floor(sec/60), s = Math.round(sec%60);
+  return `${m}:${String(s).padStart(2,'0')}`;
 }
 
-function commitSessionToBaseline() {
-  // Fold the just-finished session into the saved baseline (called on reset detection)
-  baseline = { distance: baseline.distance + lastLiveDist, time: baseline.time + lastLiveTime };
-  saveTotals(baseline);
-  lastLiveDist = 0;
-  lastLiveTime = 0;
+/* =========================================================================
+   PENDING (live, unfinished) SESSION
+   Recovered on load in case the tab/app closed mid-row, so nothing is lost.
+   ========================================================================= */
+let pending = loadPending();
+if (pending) {
+  finalizePending('Recovered after app was closed mid-session');
 }
 
-function onStatus(e) {
+function finalizePending(note) {
+  if (!pending) return;
+  if (pending.lastDistance > 0) {
+    sessions.push({
+      id: pending.id,
+      startTime: pending.startTime,
+      endTime: Date.now(),
+      distance: pending.lastDistance,
+      duration: pending.lastElapsed,
+      avgPace: pending.avgPace, avgStrokeRate: pending.strokeRate,
+      calories: pending.calories, dragFactor: pending.dragFactor,
+      heartRateEnd: pending.heartRate,
+      cumulativeDistanceAfter: totalDistance() + pending.lastDistance,
+      note: note || null
+    });
+    saveSessions(sessions);
+    log(`Session finalized: ${pending.lastDistance.toFixed(0)} m` + (note ? ' (' + note + ')' : ''));
+  }
+  pending = null;
+  savePending(null);
+}
+
+function newPending(elapsed, distance) {
+  pending = {
+    id: 'sess-' + Date.now(),
+    startTime: Date.now() - elapsed * 1000,
+    lastElapsed: elapsed, lastDistance: distance,
+    avgPace: null, strokeRate: null, calories: null, dragFactor: null, heartRate: null,
+    lastSaveTime: 0
+  };
+}
+
+/* =========================================================================
+   UI RENDER
+   ========================================================================= */
+function renderTotals() {
+  const liveDist = pending ? pending.lastDistance : 0;
+  const liveTime = pending ? pending.lastElapsed : 0;
+  $('totalDist').textContent = (totalDistance() + liveDist).toFixed(0);
+  $('totalTime').textContent = fmtHMS(totalDuration() + liveTime);
+  $('sessDist').textContent = liveDist.toFixed(0) + ' m';
+  $('sessTime').textContent = fmtHMS(liveTime);
+  updateMapPosition(totalDistance() + liveDist);
+}
+
+/* =========================================================================
+   ROUTE — loaded from route.gpx at runtime. Replacing that file later never
+   touches saved progress; only where the dot lands changes.
+   ========================================================================= */
+let routePoints = [];   // [[lat,lon], ...]
+let cumDist = [];        // meters, same length as routePoints
+let routeLen = 0;
+let waypoints = [];       // [{name, distanceM}]
+
+function haversine(a, b) {
+  const R = 6371000, toRad = d => d * Math.PI / 180;
+  const dLat = toRad(b[0]-a[0]), dLon = toRad(b[1]-a[1]);
+  const la1 = toRad(a[0]), la2 = toRad(b[0]);
+  const h = Math.sin(dLat/2)**2 + Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+async function loadRoute() {
+  const res = await fetch('route.gpx', { cache: 'no-store' });
+  const text = await res.text();
+  const xml = new DOMParser().parseFromString(text, 'application/xml');
+  const pts = Array.from(xml.querySelectorAll('trkpt')).map(pt => [
+    parseFloat(pt.getAttribute('lat')), parseFloat(pt.getAttribute('lon'))
+  ]);
+  routePoints = pts;
+  cumDist = [0];
+  for (let i = 1; i < pts.length; i++) {
+    cumDist.push(cumDist[i-1] + haversine(pts[i-1], pts[i]));
+  }
+  routeLen = cumDist[cumDist.length - 1] || 0;
+  log(`Route loaded: ${pts.length} points, ${routeLen.toFixed(0)} m`);
+}
+
+async function loadWaypoints() {
+  try {
+    const res = await fetch('waypoints.json', { cache: 'no-store' });
+    waypoints = await res.json();
+    waypoints.sort((a,b) => a.distanceM - b.distanceM);
+  } catch (e) { log('waypoints load failed: ' + e.message); }
+}
+
+// Given total meters rowed, find the lat/lon on the route (or the end +
+// overflow if you've rowed further than the currently mapped route).
+function positionAtDistance(d) {
+  if (!routePoints.length) return null;
+  if (d <= 0) return { point: routePoints[0], overflow: 0, index: 0 };
+  if (d >= routeLen) return { point: routePoints[routePoints.length-1], overflow: d - routeLen, index: routePoints.length-1 };
+  // linear scan is fine for a few thousand points; route is fixed-size per session
+  let i = 1;
+  while (i < cumDist.length && cumDist[i] < d) i++;
+  const segStart = cumDist[i-1], segEnd = cumDist[i];
+  const t = segEnd > segStart ? (d - segStart) / (segEnd - segStart) : 0;
+  const [lat1, lon1] = routePoints[i-1], [lat2, lon2] = routePoints[i];
+  return { point: [lat1 + (lat2-lat1)*t, lon1 + (lon2-lon1)*t], overflow: 0, index: i-1 };
+}
+
+function nearestWaypointBehind(d) {
+  let best = null;
+  for (const w of waypoints) { if (w.distanceM <= d) best = w; else break; }
+  return best;
+}
+
+/* =========================================================================
+   MAP
+   ========================================================================= */
+const map = L.map('map', { zoomControl: false, minZoom: 5, maxZoom: 17 }).setView([50.11, 8.68], 12);
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  subdomains: 'abcd',
+  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+  maxZoom: 20
+}).addTo(map);
+
+let traveledLine = null, remainingLine = null, posMarker = null;
+
+function drawRoute() {
+  if (!routePoints.length) return;
+  remainingLine = L.polyline(routePoints, { color:'#3a6ea8', weight:3, opacity:0.6 }).addTo(map);
+  traveledLine = L.polyline([], { color:'#5fd3a0', weight:4, opacity:0.95 }).addTo(map);
+  const icon = L.divIcon({ className:'', html:'<div class="marker-dot"></div>', iconSize:[14,14], iconAnchor:[7,7] });
+  posMarker = L.marker(routePoints[0], { icon }).addTo(map);
+  map.fitBounds(remainingLine.getBounds(), { padding:[30,30] });
+}
+
+function updateMapPosition(totalMeters) {
+  if (!routePoints.length) return;
+  const res = positionAtDistance(totalMeters);
+  if (!res) return;
+  posMarker.setLatLng(res.point);
+  const idx = res.index;
+  traveledLine.setLatLngs([...routePoints.slice(0, idx+1), res.point]);
+
+  const overWrap = $('overflowWrap');
+  if (res.overflow > 0) {
+    overWrap.innerHTML = `<div class="overflow-badge">${res.overflow.toFixed(0)} m past the end of the mapped route — extend route.gpx</div>`;
+  } else {
+    overWrap.innerHTML = '';
+  }
+
+  const wp = nearestWaypointBehind(totalMeters);
+  $('waypointText').textContent = wp ? `Last passed: ${wp.name}` : '';
+}
+
+/* =========================================================================
+   BLE — Concept2 PM5 (Bluetooth Smart Interface Definition rev 1.30)
+   ========================================================================= */
+const uuid = id => `ce06${id}-43e5-11e4-916c-0800200c9a66`;
+const ROWING_SERVICE = uuid('0030');
+const CH_GENERAL   = uuid('0031'); // elapsed, distance, workout/rowing state, drag factor
+const CH_ADD1      = uuid('0032'); // speed, stroke rate, heart rate, pace
+const CH_ADD2      = uuid('0033'); // calories
+
+const u16 = (dv,o) => dv.getUint8(o) | (dv.getUint8(o+1)<<8);
+const u24 = (dv,o) => dv.getUint8(o) | (dv.getUint8(o+1)<<8) | (dv.getUint8(o+2)<<16);
+
+function onGeneralStatus(e) {
   const dv = e.target.value;
-  if (dv.byteLength < 6) return;
-  const elapsed = u24(dv, 0) / 100;   // 0.01 s per unit
-  const distance = u24(dv, 3) / 10;   // 0.1 m per unit
+  if (dv.byteLength < 19) return;
+  const elapsed = u24(dv,0) / 100;
+  const distance = u24(dv,3) / 10;
+  const dragFactor = dv.getUint8(18);
 
-  // Detect a new workout starting (PM5 distance/time dropped back down)
-  if (distance < lastLiveDist - 1 || elapsed < lastLiveTime - 1) {
-    commitSessionToBaseline();
+  if (!pending) {
+    newPending(elapsed, distance);
+  } else if (distance < pending.lastDistance - 2 || elapsed < pending.lastElapsed - 1) {
+    // PM5 counters dropped back down -> a new row was started on the machine
+    finalizePending('New row started on PM5');
+    newPending(elapsed, distance);
   }
 
-  lastLiveDist = distance;
-  lastLiveTime = elapsed;
+  pending.lastElapsed = elapsed;
+  pending.lastDistance = distance;
+  pending.dragFactor = dragFactor;
 
-  $('dist').textContent = distance.toFixed(1) + ' m';
-  const m = Math.floor(elapsed / 60), s = (elapsed % 60).toFixed(1).padStart(4, '0');
-  $('time').textContent = `${m}:${s}`;
+  renderTotals();
 
-  renderTotals(lastLiveDist, lastLiveTime);
-
-  // Throttled save so we don't hammer localStorage every ~500ms
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    saveTotals({ distance: baseline.distance + lastLiveDist, time: baseline.time + lastLiveTime });
-  }, 2000);
+  const now = Date.now();
+  if (now - pending.lastSaveTime > 2000) {
+    pending.lastSaveTime = now;
+    savePending(pending);
+  }
 }
 
-// Also save whatever we have if the tab is closed/hidden mid-row
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    saveTotals({ distance: baseline.distance + lastLiveDist, time: baseline.time + lastLiveTime });
-  }
-});
-window.addEventListener('beforeunload', () => {
-  saveTotals({ distance: baseline.distance + lastLiveDist, time: baseline.time + lastLiveTime });
-});
+function onAdd1(e) {
+  const dv = e.target.value;
+  if (dv.byteLength < 17 || !pending) return;
+  const strokeRate = dv.getUint8(5);
+  const hr = dv.getUint8(6);
+  const currentPace = u16(dv,7) / 100; // seconds per 500m
+  pending.strokeRate = strokeRate;
+  pending.heartRate = hr === 255 ? null : hr;
+  $('livePace').textContent = fmtPace(currentPace) + ' /500m';
+  $('liveSpm').textContent = strokeRate + ' spm';
+}
+
+function onAdd2(e) {
+  const dv = e.target.value;
+  if (dv.byteLength < 20 || !pending) return;
+  pending.calories = u16(dv,6);
+}
+
+let bleDevice = null;
 
 async function connect() {
-  if (!navigator.bluetooth) {
-    log('Web Bluetooth not available. Use Chrome on Android over HTTPS.');
-    return;
-  }
+  if (!navigator.bluetooth) { log('Web Bluetooth not available — use Chrome on Android.'); return; }
   try {
-    setStatus(false, 'Searching...');
+    $('statusPill').textContent = 'Searching…';
     const device = await navigator.bluetooth.requestDevice({
       filters: [{ namePrefix: 'PM5' }],
-      optionalServices: [ROWING_SERVICE, DISCOVERY_SERVICE]
+      optionalServices: [ROWING_SERVICE]
     });
+    bleDevice = device;
     log('Selected: ' + device.name);
     device.addEventListener('gattserverdisconnected', () => {
-      setStatus(false, 'Disconnected');
-      $('btn').disabled = false;
+      $('statusPill').textContent = 'Disconnected';
+      $('statusPill').classList.remove('on');
+      $('connectBtn').disabled = false;
+      finalizePending('Disconnected from PM5');
       log('Disconnected');
     });
 
-    setStatus(false, 'Connecting...');
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(ROWING_SERVICE);
-    const ch = await service.getCharacteristic(GENERAL_STATUS);
-    ch.addEventListener('characteristicvaluechanged', onStatus);
-    await ch.startNotifications();
 
-    setStatus(true, 'Connected: ' + device.name);
-    $('btn').disabled = true;
-    log('Subscribed to general status. Start rowing.');
+    const chGeneral = await service.getCharacteristic(CH_GENERAL);
+    chGeneral.addEventListener('characteristicvaluechanged', onGeneralStatus);
+    await chGeneral.startNotifications();
+
+    try {
+      const chAdd1 = await service.getCharacteristic(CH_ADD1);
+      chAdd1.addEventListener('characteristicvaluechanged', onAdd1);
+      await chAdd1.startNotifications();
+    } catch (e) { log('additional status 1 unavailable: ' + e.message); }
+
+    try {
+      const chAdd2 = await service.getCharacteristic(CH_ADD2);
+      chAdd2.addEventListener('characteristicvaluechanged', onAdd2);
+      await chAdd2.startNotifications();
+    } catch (e) { log('additional status 2 unavailable: ' + e.message); }
+
+    $('statusPill').textContent = 'Connected: ' + device.name;
+    $('statusPill').classList.add('on');
+    $('connectBtn').disabled = true;
+    log('Subscribed. Start rowing.');
   } catch (err) {
-    setStatus(false, 'Disconnected');
+    $('statusPill').textContent = 'Disconnected';
     log('Error: ' + err.message);
   }
 }
 
-$('btn').addEventListener('click', connect);
+/* =========================================================================
+   BUTTONS
+   ========================================================================= */
+$('connectBtn').addEventListener('click', connect);
 
-$('resetBtn').addEventListener('click', () => {
-  if (!confirm('Erase all saved totals? This cannot be undone.')) return;
-  baseline = { distance: 0, time: 0 };
-  lastLiveDist = 0;
-  lastLiveTime = 0;
-  saveTotals(baseline);
-  renderTotals(0, 0);
-  log('Saved totals reset.');
+$('endBtn').addEventListener('click', () => {
+  if (!pending || pending.lastDistance === 0) { log('No active session to end.'); return; }
+  finalizePending('Ended manually');
+  renderTotals();
 });
 
-renderTotals(0, 0); // show saved baseline on page load, before any live data
-log('Secure context: ' + window.isSecureContext);
-log('Web Bluetooth: ' + !!navigator.bluetooth);
-log('Loaded saved totals: ' + baseline.distance.toFixed(0) + ' m, ' + fmtHMS(baseline.time));
+$('resetBtn').addEventListener('click', () => {
+  if (!confirm('Erase ALL saved sessions and progress? This cannot be undone.')) return;
+  sessions = [];
+  saveSessions(sessions);
+  pending = null;
+  savePending(null);
+  renderTotals();
+  log('All data reset.');
+});
+
+$('exportBtn').addEventListener('click', () => {
+  if (pending) finalizePending('Auto-closed for export'); // don't export a half-open session silently lost later
+  const payload = { version: 1, exportedAt: new Date().toISOString(), sessions };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `pm5-progress-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  renderTotals();
+});
+
+$('importBtn').addEventListener('click', () => $('importFile').click());
+$('importFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    const incoming = Array.isArray(data.sessions) ? data.sessions : [];
+    const byId = new Map(sessions.map(s => [s.id, s]));
+    let added = 0;
+    for (const s of incoming) {
+      if (!byId.has(s.id)) { byId.set(s.id, s); added++; }
+    }
+    sessions = Array.from(byId.values()).sort((a,b) => (a.startTime||0) - (b.startTime||0));
+    saveSessions(sessions);
+    renderTotals();
+    log(`Imported: ${added} new session(s), ${incoming.length - added} already present.`);
+  } catch (err) {
+    log('Import failed: ' + err.message);
+  }
+  e.target.value = '';
+});
+
+// Safety net: persist pending if the tab is hidden/closed mid-row.
+document.addEventListener('visibilitychange', () => { if (document.hidden && pending) savePending(pending); });
+window.addEventListener('beforeunload', () => { if (pending) savePending(pending); });
+
+/* =========================================================================
+   INIT
+   ========================================================================= */
+(async function init() {
+  log('Secure context: ' + window.isSecureContext);
+  log('Web Bluetooth: ' + !!navigator.bluetooth);
+  await loadRoute();
+  await loadWaypoints();
+  drawRoute();
+  renderTotals();
+})();
 </script>
 </body>
 </html>
