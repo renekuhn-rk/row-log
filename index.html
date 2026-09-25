@@ -19,12 +19,21 @@
     position:absolute; top:0; left:0; bottom:0; z-index:1000;
     width:320px; max-width:86vw;
     background:rgba(18,18,20,0.94); backdrop-filter: blur(10px);
-    padding: calc(14px + env(safe-area-inset-top,0px)) 16px 14px calc(16px + env(safe-area-inset-left,0px));
     box-shadow: 4px 0 24px rgba(0,0,0,0.5);
-    overflow-y:auto;
     transition: transform 0.22s ease;
+    display:flex; flex-direction:column;
   }
   #panel.collapsed { transform: translateX(-100%); }
+  #panelContent {
+    flex:1; overflow-y:auto; min-height:0;
+    padding: calc(14px + env(safe-area-inset-top,0px)) 16px 8px calc(16px + env(safe-area-inset-left,0px));
+  }
+  #panelFooter {
+    flex-shrink:0; padding: 10px 16px calc(12px + env(safe-area-inset-bottom,0px)) calc(16px + env(safe-area-inset-left,0px));
+    border-top:1px solid rgba(255,255,255,0.08);
+  }
+  #settingsBtn { background:none; border:0; color:#9ab; font-size:14px; padding:6px 4px; }
+  #backBtn { background:none; border:0; color:#9ab; font-size:14px; padding:4px; margin-bottom:10px; }
   #panelToggle {
     position:absolute; top:50%; z-index:1001; transform:translateY(-50%);
     width:26px; height:64px; border:0; border-radius:0 10px 10px 0;
@@ -81,50 +90,72 @@
 <button id="recenterBtn" title="Recenter on my position">&#8982;</button>
 
 <div id="panel">
-  <div class="row">
-    <div id="statusPill">Disconnected</div>
-    <button id="connectBtn">Connect</button>
+ <div id="panelContent">
+
+  <div id="mainView">
+    <div class="row">
+      <div id="statusPill">Disconnected</div>
+      <button id="connectBtn">Connect</button>
+    </div>
+
+    <div class="row" style="margin-top:14px;">
+      <div>
+        <div class="lbl">Total distance</div>
+        <div class="big"><span id="totalDist">0</span> m</div>
+      </div>
+      <div style="text-align:right;">
+        <div class="lbl">Total time</div>
+        <div id="totalTime" style="font-size:20px;">0:00:00</div>
+      </div>
+    </div>
+    <div id="overflowWrap"></div>
+    <div class="waypoint" id="waypointText"></div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="lbl">This session</div>
+        <div id="sessDist">0 m</div>
+        <div id="sessTime">0:00</div>
+      </div>
+      <div class="card">
+        <div class="lbl">Live</div>
+        <div id="livePace">-- /500m</div>
+        <div id="liveSpm">-- spm</div>
+      </div>
+      <div class="card">
+        <div class="lbl">Route progress</div>
+        <div id="routeProgress">0 / 0 m</div>
+        <div id="routePercent">0%</div>
+      </div>
+      <div class="card">
+        <div class="lbl">Projected finish</div>
+        <div id="projEta">--</div>
+      </div>
+    </div>
   </div>
 
-  <div class="row" style="margin-top:14px;">
-    <div>
-      <div class="lbl">Total distance</div>
-      <div class="big"><span id="totalDist">0</span> m</div>
-    </div>
-    <div style="text-align:right;">
-      <div class="lbl">Total time</div>
-      <div id="totalTime" style="font-size:20px;">0:00:00</div>
-    </div>
-  </div>
-  <div id="overflowWrap"></div>
-  <div class="waypoint" id="waypointText"></div>
+  <div id="settingsView" style="display:none;">
+    <button id="backBtn">&#8592; Back</button>
 
-  <div class="grid2">
-    <div class="card">
-      <div class="lbl">This session</div>
-      <div id="sessDist">0 m</div>
-      <div id="sessTime">0:00</div>
+    <div class="btnrow">
+      <button id="endBtn">End session</button>
+      <button id="exportBtn">Export JSON</button>
+      <button id="importBtn">Import JSON</button>
+      <button id="resetBtn" class="danger">Reset all data</button>
+      <button id="fullscreenBtn" class="accent">Fullscreen</button>
+      <button id="installBtn" class="accent" style="display:none;">Install app</button>
     </div>
-    <div class="card">
-      <div class="lbl">Live</div>
-      <div id="livePace">-- /500m</div>
-      <div id="liveSpm">-- spm</div>
-    </div>
+
+    <details>
+      <summary>Debug log</summary>
+      <pre id="log"></pre>
+    </details>
   </div>
 
-  <div class="btnrow">
-    <button id="endBtn">End session</button>
-    <button id="exportBtn">Export JSON</button>
-    <button id="importBtn">Import JSON</button>
-    <button id="resetBtn" class="danger">Reset all data</button>
-    <button id="fullscreenBtn" class="accent">Fullscreen</button>
-    <button id="installBtn" class="accent" style="display:none;">Install app</button>
-  </div>
-
-  <details>
-    <summary>Debug log</summary>
-    <pre id="log"></pre>
-  </details>
+ </div>
+ <div id="panelFooter">
+   <button id="settingsBtn">&#9881; Settings</button>
+ </div>
 </div>
 
 <input type="file" id="importFile" accept="application/json" hidden>
@@ -216,9 +247,10 @@ function fmtPace(sec) {
    Recovered on load in case the tab/app closed mid-row, so nothing is lost.
    ========================================================================= */
 let pending = loadPending();
-if (pending) {
-  finalizePending('Recovered after app was closed mid-session');
-}
+const pendingRecoveryNote = pending ? 'Recovered after app was closed mid-session' : null;
+// NOTE: the actual finalize() call for this happens in init(), after the map
+// and sessionMarkersLayer exist — finalizePending() draws a marker, which
+// would fail if called this early.
 
 function finalizePending(note) {
   if (!pending) return;
@@ -236,6 +268,7 @@ function finalizePending(note) {
       note: note || null
     });
     saveSessions(sessions);
+    renderSessionMarkers();
     log(`Session finalized: ${pending.lastDistance.toFixed(0)} m` + (note ? ' (' + note + ')' : ''));
   }
   pending = null;
@@ -258,11 +291,13 @@ function newPending(elapsed, distance) {
 function renderTotals() {
   const liveDist = pending ? pending.lastDistance : 0;
   const liveTime = pending ? pending.lastElapsed : 0;
-  $('totalDist').textContent = (totalDistance() + liveDist).toFixed(0);
+  const total = totalDistance() + liveDist;
+  $('totalDist').textContent = total.toFixed(0);
   $('totalTime').textContent = fmtHMS(totalDuration() + liveTime);
   $('sessDist').textContent = liveDist.toFixed(0) + ' m';
   $('sessTime').textContent = fmtHMS(liveTime);
-  updateMapPosition(totalDistance() + liveDist);
+  updateMapPosition(total);
+  renderProjection(total);
 }
 
 /* =========================================================================
@@ -331,7 +366,6 @@ function nearestWaypointBehind(d) {
    MAP
    ========================================================================= */
 const map = L.map('map', { zoomControl: false, minZoom: 5, maxZoom: 17 }).setView([50.11, 8.68], 12);
-L.control.zoom({ position: 'bottomright' }).addTo(map);
 
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
   subdomains: 'abcd',
@@ -352,6 +386,20 @@ function setRecenterBtnState() {
   $('recenterBtn').classList.toggle('needed', !followMode);
 }
 
+// Where the map's center needs to be so that `latlng` lands at the visual
+// center of the space NOT covered by the (possibly open) side panel.
+function computeFollowCenter(latlng) {
+  const zoom = map.getZoom();
+  const size = map.getSize(); // L.Point {x: width, y: height}
+  const panelOpen = !panelEl.classList.contains('collapsed');
+  const panelWidth = panelOpen ? panelEl.offsetWidth : 0;
+  const desired = L.point(panelWidth + (size.x - panelWidth) / 2, size.y / 2);
+  const containerCenter = L.point(size.x / 2, size.y / 2);
+  const targetPx = map.project(latlng, zoom);
+  const centerPx = targetPx.subtract(desired.subtract(containerCenter));
+  return map.unproject(centerPx, zoom);
+}
+
 function drawRoute() {
   if (!routePoints.length) return;
   remainingLine = L.polyline(routePoints, { color:'#3a6ea8', weight:3, opacity:0.6 }).addTo(map);
@@ -370,7 +418,7 @@ map.on('zoomstart', () => { followMode = false; setRecenterBtnState(); });
 $('recenterBtn').addEventListener('click', () => {
   followMode = true;
   setRecenterBtnState();
-  if (lastKnownPoint) map.setView(lastKnownPoint, map.getZoom(), { animate: true });
+  if (lastKnownPoint) map.setView(computeFollowCenter(lastKnownPoint), map.getZoom(), { animate: true });
 });
 
 function updateMapPosition(totalMeters) {
@@ -382,7 +430,7 @@ function updateMapPosition(totalMeters) {
   const idx = res.index;
   traveledLine.setLatLngs([...routePoints.slice(0, idx+1), res.point]);
 
-  if (followMode) map.setView(res.point, map.getZoom(), { animate: false });
+  if (followMode) map.setView(computeFollowCenter(res.point), map.getZoom(), { animate: false });
 
   const overWrap = $('overflowWrap');
   if (res.overflow > 0) {
@@ -393,6 +441,53 @@ function updateMapPosition(totalMeters) {
 
   const wp = nearestWaypointBehind(totalMeters);
   $('waypointText').textContent = wp ? `Last passed: ${wp.name}` : '';
+
+  $('routeProgress').textContent = `${totalMeters.toFixed(0)} / ${routeLen.toFixed(0)} m`;
+  $('routePercent').textContent = routeLen > 0 ? (totalMeters / routeLen * 100).toFixed(1) + '%' : '--';
+}
+
+/* =========================================================================
+   SESSION-END MARKERS — a small dot on the route for every finished session,
+   labeled with the date it was reached. Rebuilt whenever sessions[] changes.
+   ========================================================================= */
+const sessionMarkersLayer = L.layerGroup().addTo(map);
+
+function renderSessionMarkers() {
+  sessionMarkersLayer.clearLayers();
+  if (!routePoints.length) return;
+  for (const s of sessions) {
+    const res = positionAtDistance(s.cumulativeDistanceAfter);
+    if (!res) continue;
+    const dateStr = new Date(s.endTime).toLocaleDateString();
+    L.circleMarker(res.point, {
+      radius: 5, color: '#ffd28a', weight: 2, fillColor: '#ffd28a', fillOpacity: 0.9
+    }).bindTooltip(dateStr).addTo(sessionMarkersLayer);
+  }
+}
+
+/* =========================================================================
+   PROJECTION — days:hours:minutes to reach the end of the CURRENTLY loaded
+   route.gpx, based on your average meters/day since your first session.
+   ========================================================================= */
+function fmtDHM(totalSeconds) {
+  const totalMin = Math.round(totalSeconds / 60);
+  const d = Math.floor(totalMin / 1440);
+  const h = Math.floor((totalMin % 1440) / 60);
+  const m = totalMin % 60;
+  return `${d}:${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+
+function renderProjection(totalMeters) {
+  const el = $('projEta');
+  const starts = sessions.map(s => s.startTime).filter(Boolean);
+  if (!starts.length || !routeLen) { el.textContent = 'Not enough data yet'; return; }
+  const days = (Date.now() - Math.min(...starts)) / 86400000;
+  if (days < 0.5 || totalMeters <= 0) { el.textContent = 'Not enough data yet'; return; }
+  const perDay = totalMeters / days;
+  const remaining = routeLen - totalMeters;
+  if (remaining <= 0) { el.textContent = 'Past mapped route end'; return; }
+  const etaSeconds = (remaining / perDay) * 86400;
+  el.textContent = fmtDHM(etaSeconds) + '  (d:h:m)';
 }
 
 /* =========================================================================
@@ -470,6 +565,7 @@ async function connect() {
       $('statusPill').classList.remove('on');
       $('connectBtn').disabled = false;
       finalizePending('Disconnected from PM5');
+      releaseWakeLock();
       log('Disconnected');
     });
 
@@ -495,6 +591,7 @@ async function connect() {
     $('statusPill').textContent = 'Connected: ' + device.name;
     $('statusPill').classList.add('on');
     $('connectBtn').disabled = true;
+    requestWakeLock();
     log('Subscribed. Start rowing.');
   } catch (err) {
     $('statusPill').textContent = 'Disconnected';
@@ -519,6 +616,7 @@ $('resetBtn').addEventListener('click', () => {
   saveSessions(sessions);
   pending = null;
   savePending(null);
+  renderSessionMarkers();
   renderTotals();
   log('All data reset.');
 });
@@ -549,6 +647,7 @@ $('importFile').addEventListener('change', async (e) => {
     }
     sessions = Array.from(byId.values()).sort((a,b) => (a.startTime||0) - (b.startTime||0));
     saveSessions(sessions);
+    renderSessionMarkers();
     renderTotals();
     log(`Imported: ${added} new session(s), ${incoming.length - added} already present.`);
   } catch (err) {
@@ -568,9 +667,50 @@ toggleEl.addEventListener('click', () => {
   panelEl.classList.toggle('collapsed');
   toggleEl.innerHTML = panelEl.classList.contains('collapsed') ? '&#8250;' : '&#8249;';
   positionToggle();
-  setTimeout(() => map.invalidateSize(), 230); // after the CSS transition
+  setTimeout(() => {
+    map.invalidateSize();
+    if (followMode && lastKnownPoint) map.setView(computeFollowCenter(lastKnownPoint), map.getZoom(), { animate: true });
+  }, 230); // after the CSS transition
 });
 window.addEventListener('resize', positionToggle);
+
+function showSettings(show) {
+  $('mainView').style.display = show ? 'none' : 'block';
+  $('settingsView').style.display = show ? 'block' : 'none';
+  $('panelFooter').style.display = show ? 'none' : 'block';
+}
+$('settingsBtn').addEventListener('click', () => showSettings(true));
+$('backBtn').addEventListener('click', () => showSettings(false));
+
+/* =========================================================================
+   WAKE LOCK — keeps the screen on while connected, like a video player does.
+   Released on disconnect; the browser also releases it whenever the tab is
+   hidden, so we re-acquire it on visibilitychange if we still want it.
+   ========================================================================= */
+let wakeLock = null;
+let wakeLockWanted = false;
+
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) {
+    log('Screen Wake Lock not supported on this browser — set your tablet screen timeout manually.');
+    return;
+  }
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLockWanted = true;
+    log('Screen wake lock acquired.');
+    wakeLock.addEventListener('release', () => log('Screen wake lock released.'));
+  } catch (e) { log('Wake lock failed: ' + e.message); }
+}
+function releaseWakeLock() {
+  wakeLockWanted = false;
+  if (wakeLock) { wakeLock.release(); wakeLock = null; }
+}
+document.addEventListener('visibilitychange', async () => {
+  if (wakeLockWanted && document.visibilityState === 'visible') {
+    try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+  }
+});
 
 /* =========================================================================
    FULLSCREEN + PWA INSTALL
@@ -612,6 +752,8 @@ window.addEventListener('beforeunload', () => { if (pending) savePending(pending
   await loadRoute();
   await loadWaypoints();
   drawRoute();
+  if (pendingRecoveryNote) finalizePending(pendingRecoveryNote);
+  renderSessionMarkers();
   renderTotals();
 })();
 </script>
