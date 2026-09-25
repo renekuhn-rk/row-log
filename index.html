@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Frankfurt → Ribeira</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0b0c">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
   :root { color-scheme: dark; }
@@ -14,20 +16,29 @@
   #map .leaflet-control-attribution a { color:#8cf; }
 
   #panel {
-    position:absolute; left:0; right:0; bottom:0; z-index:1000;
-    background:rgba(18,18,20,0.92); backdrop-filter: blur(10px);
-    border-radius:18px 18px 0 0;
-    padding:14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
-    box-shadow: 0 -4px 24px rgba(0,0,0,0.5);
-    max-height:60vh; overflow-y:auto;
+    position:absolute; top:0; left:0; bottom:0; z-index:1000;
+    width:320px; max-width:86vw;
+    background:rgba(18,18,20,0.94); backdrop-filter: blur(10px);
+    padding: calc(14px + env(safe-area-inset-top,0px)) 16px 14px calc(16px + env(safe-area-inset-left,0px));
+    box-shadow: 4px 0 24px rgba(0,0,0,0.5);
+    overflow-y:auto;
+    transition: transform 0.22s ease;
   }
-  #topbar {
-    position:absolute; top:0; left:0; right:0; z-index:1000;
-    padding: calc(10px + env(safe-area-inset-top,0px)) 14px 10px;
-    display:flex; justify-content:space-between; align-items:center;
-    background:linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+  #panel.collapsed { transform: translateX(-100%); }
+  #panelToggle {
+    position:absolute; top:50%; z-index:1001; transform:translateY(-50%);
+    width:26px; height:64px; border:0; border-radius:0 10px 10px 0;
+    background:rgba(18,18,20,0.94); color:#ccc; font-size:16px;
+    transition: left 0.22s ease;
   }
-  #statusPill { padding:5px 12px; border-radius:20px; background:#5a2323; font-size:13px; font-weight:600; }
+  #recenterBtn {
+    position:absolute; right:16px; bottom:calc(16px + env(safe-area-inset-bottom,0px)); z-index:1000;
+    width:54px; height:54px; border-radius:50%; border:0;
+    background:#2a2a2e; color:#8ab; font-size:22px;
+    box-shadow:0 2px 12px rgba(0,0,0,0.5);
+  }
+  #recenterBtn.needed { background:#2f7de1; color:#fff; }
+  #statusPill { padding:5px 12px; border-radius:20px; background:#5a2323; font-size:13px; font-weight:600; display:inline-block; }
   #statusPill.on { background:#1f6b3a; }
   #connectBtn {
     font-size:14px; padding:9px 16px; border:0; border-radius:10px;
@@ -66,13 +77,16 @@
 
 <div id="map"></div>
 
-<div id="topbar">
-  <div id="statusPill">Disconnected</div>
-  <button id="connectBtn">Connect to PM5</button>
-</div>
+<button id="panelToggle">&#8249;</button>
+<button id="recenterBtn" title="Recenter on my position">&#8982;</button>
 
 <div id="panel">
   <div class="row">
+    <div id="statusPill">Disconnected</div>
+    <button id="connectBtn">Connect</button>
+  </div>
+
+  <div class="row" style="margin-top:14px;">
     <div>
       <div class="lbl">Total distance</div>
       <div class="big"><span id="totalDist">0</span> m</div>
@@ -103,6 +117,8 @@
     <button id="exportBtn">Export JSON</button>
     <button id="importBtn">Import JSON</button>
     <button id="resetBtn" class="danger">Reset all data</button>
+    <button id="fullscreenBtn" class="accent">Fullscreen</button>
+    <button id="installBtn" class="accent" style="display:none;">Install app</button>
   </div>
 
   <details>
@@ -324,6 +340,17 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
 }).addTo(map);
 
 let traveledLine = null, remainingLine = null, posMarker = null;
+let lastKnownPoint = null;
+
+// Locked-camera follow mode: the marker stays pinned at screen center and the
+// map recenters under it on every update, at whatever zoom the user set.
+// Panning or pinch-zooming (user gestures only — our own recentering never
+// triggers these) turns it off; the recenter button turns it back on.
+let followMode = true;
+
+function setRecenterBtnState() {
+  $('recenterBtn').classList.toggle('needed', !followMode);
+}
 
 function drawRoute() {
   if (!routePoints.length) return;
@@ -334,13 +361,28 @@ function drawRoute() {
   map.fitBounds(remainingLine.getBounds(), { padding:[30,30] });
 }
 
+// 'dragstart' and 'zoomstart' only fire from user gestures — our own
+// setView() calls below never change zoom and Leaflet doesn't emit
+// dragstart for programmatic pans, so this can't self-trigger.
+map.on('dragstart', () => { followMode = false; setRecenterBtnState(); });
+map.on('zoomstart', () => { followMode = false; setRecenterBtnState(); });
+
+$('recenterBtn').addEventListener('click', () => {
+  followMode = true;
+  setRecenterBtnState();
+  if (lastKnownPoint) map.setView(lastKnownPoint, map.getZoom(), { animate: true });
+});
+
 function updateMapPosition(totalMeters) {
   if (!routePoints.length) return;
   const res = positionAtDistance(totalMeters);
   if (!res) return;
+  lastKnownPoint = res.point;
   posMarker.setLatLng(res.point);
   const idx = res.index;
   traveledLine.setLatLngs([...routePoints.slice(0, idx+1), res.point]);
+
+  if (followMode) map.setView(res.point, map.getZoom(), { animate: false });
 
   const overWrap = $('overflowWrap');
   if (res.overflow > 0) {
@@ -515,6 +557,46 @@ $('importFile').addEventListener('change', async (e) => {
   e.target.value = '';
 });
 
+/* =========================================================================
+   PANEL COLLAPSE (left sidebar, for tablet landscape use)
+   ========================================================================= */
+const panelEl = $('panel'), toggleEl = $('panelToggle');
+function positionToggle() {
+  toggleEl.style.left = panelEl.classList.contains('collapsed') ? '0px' : panelEl.offsetWidth + 'px';
+}
+toggleEl.addEventListener('click', () => {
+  panelEl.classList.toggle('collapsed');
+  toggleEl.innerHTML = panelEl.classList.contains('collapsed') ? '&#8250;' : '&#8249;';
+  positionToggle();
+  setTimeout(() => map.invalidateSize(), 230); // after the CSS transition
+});
+window.addEventListener('resize', positionToggle);
+
+/* =========================================================================
+   FULLSCREEN + PWA INSTALL
+   Fullscreen API works immediately but isn't persistent (exits on sleep/app
+   switch). Installing as a PWA (manifest.json, "standalone" display) is the
+   robust fix — it removes the browser chrome entirely, like a real app icon.
+   ========================================================================= */
+$('fullscreenBtn').addEventListener('click', () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().catch(e => log('Fullscreen failed: ' + e.message));
+});
+
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  $('installBtn').style.display = 'block';
+});
+$('installBtn').addEventListener('click', async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  $('installBtn').style.display = 'none';
+});
+
 // Safety net: persist pending if the tab is hidden/closed mid-row.
 document.addEventListener('visibilitychange', () => { if (document.hidden && pending) savePending(pending); });
 window.addEventListener('beforeunload', () => { if (pending) savePending(pending); });
@@ -525,6 +607,8 @@ window.addEventListener('beforeunload', () => { if (pending) savePending(pending
 (async function init() {
   log('Secure context: ' + window.isSecureContext);
   log('Web Bluetooth: ' + !!navigator.bluetooth);
+  positionToggle();
+  setRecenterBtnState();
   await loadRoute();
   await loadWaypoints();
   drawRoute();

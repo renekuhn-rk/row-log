@@ -1,0 +1,9 @@
+{
+  "name": "Frankfurt to Ribeira",
+  "short_name": "Row Map",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#0b0b0c",
+  "theme_color": "#0b0b0c"
+}
