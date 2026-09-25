@@ -10,9 +10,12 @@
   #status.on { background:#2a7; }
   #dist { font-size:64px; font-weight:700; margin:24px 0 4px; }
   .sub { color:#999; margin-bottom:16px; }
-  button { font-size:18px; padding:14px 28px; border:0; border-radius:10px; background:#38f; color:#fff; }
+  button { font-size:18px; padding:14px 28px; border:0; border-radius:10px; background:#38f; color:#fff; margin:4px; }
   button:disabled { background:#555; }
   pre { text-align:left; background:#000; padding:10px; border-radius:8px; font-size:12px; max-height:180px; overflow:auto; }
+  .totals { margin:20px 0; padding:16px; background:#1c1c1c; border-radius:10px; }
+  .totals .big { font-size:36px; font-weight:700; color:#4f9; }
+  .totals .lbl { color:#999; font-size:13px; text-transform:uppercase; letter-spacing:1px; }
 </style>
 </head>
 <body>
@@ -21,6 +24,15 @@
   <div id="dist">-- m</div>
   <div class="sub">Elapsed: <span id="time">--</span></div>
   <button id="btn">Connect to PM5</button>
+
+  <div class="totals">
+    <div class="lbl">All-time total</div>
+    <div class="big"><span id="totalDist">0</span> m</div>
+    <div class="lbl" style="margin-top:8px;">Total time</div>
+    <div id="totalTime">0:00:00</div>
+    <button id="resetBtn" style="background:#833; font-size:13px; padding:6px 12px; margin-top:10px;">Reset saved totals</button>
+  </div>
+
   <pre id="log"></pre>
 
 <script>
@@ -41,15 +53,90 @@ function setStatus(on, text) {
 // 3-byte little-endian helper
 const u24 = (dv, o) => dv.getUint8(o) | (dv.getUint8(o+1) << 8) | (dv.getUint8(o+2) << 16);
 
+// ---- Persistence ----
+// PM5 distance/time reset to 0 whenever a new row is started on the machine.
+// We keep a running "baseline" (saved total from all previous sessions) and
+// add the current session's live numbers on top, so a reset never erases history.
+const STORAGE_KEY = 'pm5_totals_v1';
+
+function loadTotals() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) { log('Storage read failed: ' + e.message); }
+  return { distance: 0, time: 0 }; // meters, seconds
+}
+
+function saveTotals(t) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(t));
+  } catch (e) { log('Storage save failed: ' + e.message); }
+}
+
+let baseline = loadTotals();      // committed totals from prior sessions
+let lastLiveDist = 0;             // last distance value seen this session
+let lastLiveTime = 0;             // last elapsed time value seen this session
+let saveTimer = null;
+
+function fmtHMS(sec) {
+  sec = Math.floor(sec);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+function renderTotals(liveDist, liveTime) {
+  const totalDist = baseline.distance + liveDist;
+  const totalTime = baseline.time + liveTime;
+  $('totalDist').textContent = totalDist.toFixed(0);
+  $('totalTime').textContent = fmtHMS(totalTime);
+}
+
+function commitSessionToBaseline() {
+  // Fold the just-finished session into the saved baseline (called on reset detection)
+  baseline = { distance: baseline.distance + lastLiveDist, time: baseline.time + lastLiveTime };
+  saveTotals(baseline);
+  lastLiveDist = 0;
+  lastLiveTime = 0;
+}
+
 function onStatus(e) {
   const dv = e.target.value;
   if (dv.byteLength < 6) return;
   const elapsed = u24(dv, 0) / 100;   // 0.01 s per unit
   const distance = u24(dv, 3) / 10;   // 0.1 m per unit
+
+  // Detect a new workout starting (PM5 distance/time dropped back down)
+  if (distance < lastLiveDist - 1 || elapsed < lastLiveTime - 1) {
+    commitSessionToBaseline();
+  }
+
+  lastLiveDist = distance;
+  lastLiveTime = elapsed;
+
   $('dist').textContent = distance.toFixed(1) + ' m';
   const m = Math.floor(elapsed / 60), s = (elapsed % 60).toFixed(1).padStart(4, '0');
   $('time').textContent = `${m}:${s}`;
+
+  renderTotals(lastLiveDist, lastLiveTime);
+
+  // Throttled save so we don't hammer localStorage every ~500ms
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTotals({ distance: baseline.distance + lastLiveDist, time: baseline.time + lastLiveTime });
+  }, 2000);
 }
+
+// Also save whatever we have if the tab is closed/hidden mid-row
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    saveTotals({ distance: baseline.distance + lastLiveDist, time: baseline.time + lastLiveTime });
+  }
+});
+window.addEventListener('beforeunload', () => {
+  saveTotals({ distance: baseline.distance + lastLiveDist, time: baseline.time + lastLiveTime });
+});
 
 async function connect() {
   if (!navigator.bluetooth) {
@@ -86,8 +173,21 @@ async function connect() {
 }
 
 $('btn').addEventListener('click', connect);
+
+$('resetBtn').addEventListener('click', () => {
+  if (!confirm('Erase all saved totals? This cannot be undone.')) return;
+  baseline = { distance: 0, time: 0 };
+  lastLiveDist = 0;
+  lastLiveTime = 0;
+  saveTotals(baseline);
+  renderTotals(0, 0);
+  log('Saved totals reset.');
+});
+
+renderTotals(0, 0); // show saved baseline on page load, before any live data
 log('Secure context: ' + window.isSecureContext);
 log('Web Bluetooth: ' + !!navigator.bluetooth);
+log('Loaded saved totals: ' + baseline.distance.toFixed(0) + ' m, ' + fmtHMS(baseline.time));
 </script>
 </body>
 </html>
