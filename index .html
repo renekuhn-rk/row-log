@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Frankfurt → Ribeira</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0b0c">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body { height:100%; margin:0; background:#0b0b0c; }
+  body { font-family: -apple-system, system-ui, sans-serif; color:#eee; }
+  #map { position:absolute; inset:0; background:#0b0b0c; }
+  #map .leaflet-control-attribution { background:rgba(0,0,0,0.5); color:#aaa; }
+  #map .leaflet-control-attribution a { color:#8cf; }
+
+  #streamView { position:absolute; inset:0; background:#000; display:none; }
+  #streamView video { width:100%; height:100%; object-fit:contain; }
+
+  #panel {
+    position:absolute; top:0; left:0; bottom:0; z-index:1000;
+    width:320px; max-width:86vw;
+    background:rgba(18,18,20,0.94); backdrop-filter: blur(10px);
+    box-shadow: 4px 0 24px rgba(0,0,0,0.5);
+    transition: transform 0.22s ease;
+    display:flex; flex-direction:column;
+  }
+  #panel.collapsed { transform: translateX(-100%); }
+  #panelContent {
+    flex:1; overflow-y:auto; min-height:0;
+    padding: calc(14px + env(safe-area-inset-top,0px)) 16px 8px calc(16px + env(safe-area-inset-left,0px));
+  }
+  #panelFooter {
+    flex-shrink:0; padding: 10px 16px calc(12px + env(safe-area-inset-bottom,0px)) calc(16px + env(safe-area-inset-left,0px));
+    border-top:1px solid rgba(255,255,255,0.08);
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  #settingsBtn, #statsBtn { background:none; border:0; color:#9ab; font-size:14px; padding:6px 4px; }
+  #backBtn { background:none; border:0; color:#9ab; font-size:14px; padding:4px; margin-bottom:10px; }
+  #panelToggle {
+    position:absolute; top:50%; z-index:1001; transform:translateY(-50%);
+    width:26px; height:64px; border:0; border-radius:0 10px 10px 0;
+    background:rgba(18,18,20,0.94); color:#ccc; font-size:16px;
+    transition: left 0.22s ease;
+  }
+  #recenterBtn {
+    position:absolute; right:16px; bottom:calc(16px + env(safe-area-inset-bottom,0px)); z-index:1000;
+    width:54px; height:54px; border-radius:50%; border:0;
+    background:#2a2a2e; color:#8ab; font-size:22px;
+    box-shadow:0 2px 12px rgba(0,0,0,0.5);
+  }
+  #recenterBtn.needed { background:#2f7de1; color:#fff; }
+  #statusPill { padding:5px 12px; border-radius:20px; background:#5a2323; font-size:13px; font-weight:600; display:inline-block; }
+  #statusPill.on { background:#1f6b3a; }
+  #connectBtn {
+    font-size:14px; padding:9px 16px; border:0; border-radius:10px;
+    background:#2f7de1; color:#fff; font-weight:600;
+  }
+  #connectBtn:disabled { background:#444; color:#999; }
+
+  .row { display:flex; justify-content:space-between; align-items:baseline; margin:6px 0; }
+  .big { font-size:34px; font-weight:700; color:#5fd3a0; }
+  .lbl { color:#999; font-size:12px; text-transform:uppercase; letter-spacing:0.5px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:10px 0; }
+  .card { background:rgba(255,255,255,0.05); border-radius:12px; padding:10px 12px; }
+  .overflow-badge { background:#7a4a00; color:#ffd28a; padding:4px 10px; border-radius:8px; font-size:12px; display:inline-block; margin-top:4px; }
+  .waypoint { font-size:14px; color:#bcd; margin-top:2px; }
+
+  .btnrow { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .btnrow button {
+    flex:1; min-width:110px; font-size:13px; padding:9px 10px; border:0; border-radius:9px;
+    background:#2a2a2e; color:#ddd;
+  }
+  .btnrow button.danger { background:#5a2323; color:#ffb; }
+  .btnrow button.accent { background:#2f7de1; color:#fff; }
+
+  details { margin-top:12px; }
+  summary { cursor:pointer; color:#888; font-size:12px; }
+  pre#log { background:#000; padding:8px; border-radius:8px; font-size:11px; max-height:140px; overflow:auto; margin-top:6px; }
+
+  .marker-dot {
+    width:14px; height:14px; border-radius:50%;
+    background:#5fd3a0; border:2px solid #0b0b0c;
+    box-shadow:0 0 10px 3px rgba(95,211,160,0.7);
+  }
+
+  /* ---- stats page ---- */
+  #statsPage {
+    position:absolute; inset:0; z-index:2000; overflow-y:auto;
+    background:#0b0b0c;
+    padding: calc(20px + env(safe-area-inset-top,0px)) 20px calc(24px + env(safe-area-inset-bottom,0px));
+    display:none;
+  }
+  #statsHeader { display:flex; align-items:center; gap:14px; margin-bottom:18px; }
+  #statsBack { background:none; border:0; color:#9ab; font-size:18px; padding:6px; }
+  #statsHeader h2 { font-size:20px; margin:0; font-weight:700; }
+
+  #heatmapScroll { overflow-x:auto; padding-bottom:6px; }
+  #heatmapMonths { display:grid; grid-auto-flow:column; grid-auto-columns:11px; gap:3px; margin-left:26px; margin-bottom:4px; font-size:10px; color:#888; height:14px; }
+  #heatmapBody { display:flex; gap:6px; }
+  #heatmapDayLabels { display:grid; grid-template-rows:repeat(7, 11px); gap:3px; font-size:9px; color:#777; }
+  #heatmapDayLabels div { display:flex; align-items:center; height:11px; }
+  #heatmapGrid { display:grid; grid-auto-flow:column; grid-auto-columns:11px; grid-template-rows:repeat(7, 11px); gap:3px; }
+  .hm-cell { width:11px; height:11px; border-radius:2px; background:#1c1c1e; }
+  .hm-cell.l1 { background:rgba(95,211,160,0.28); }
+  .hm-cell.l2 { background:rgba(95,211,160,0.5); }
+  .hm-cell.l3 { background:rgba(95,211,160,0.75); }
+  .hm-cell.l4 { background:#5fd3a0; }
+  #heatmapLegend { display:flex; align-items:center; gap:4px; margin-top:8px; font-size:11px; color:#888; }
+  #heatmapLegend .hm-cell { width:10px; height:10px; }
+
+  .recordsGrid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:14px; }
+  .recordCard { background:rgba(255,255,255,0.05); border-radius:14px; padding:16px; }
+  .recordCard .big { font-size:28px; }
+  .recordCard .sub { font-size:12px; color:#999; margin-top:4px; }
+
+  .chartCard canvas { max-height:220px; }
+  .chartToggle { display:flex; gap:6px; margin-bottom:10px; }
+  .chartToggle button { font-size:12px; padding:5px 12px; border:0; border-radius:8px; background:#2a2a2e; color:#bbb; }
+  .chartToggle button.active { background:#2f7de1; color:#fff; }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+<div id="streamView"></div>
+
+<button id="panelToggle">&#8249;</button>
+<button id="recenterBtn" title="Recenter on my position">&#8982;</button>
+
+<div id="panel">
+ <div id="panelContent">
+
+  <div id="mainView">
+    <div class="row">
+      <div id="statusPill">Disconnected</div>
+      <button id="connectBtn">Connect</button>
+    </div>
+
+    <div class="btnrow">
+      <button id="streamToggleBtn" class="accent">Show 3D View</button>
+    </div>
+
+    <div class="row" style="margin-top:14px;">
+      <div>
+        <div class="lbl">Total distance</div>
+        <div class="big"><span id="totalDist">0</span> m</div>
+      </div>
+      <div style="text-align:right;">
+        <div class="lbl">Total time</div>
+        <div id="totalTime" style="font-size:20px;">0:00:00</div>
+      </div>
+    </div>
+    <div id="overflowWrap"></div>
+    <div class="waypoint" id="waypointText"></div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="lbl">This session</div>
+        <div id="sessDist">0 m</div>
+        <div id="sessTime">0:00</div>
+      </div>
+      <div class="card">
+        <div class="lbl">Live</div>
+        <div id="livePace">-- /500m</div>
+        <div id="liveSpm">-- spm</div>
+      </div>
+      <div class="card">
+        <div class="lbl">Route progress</div>
+        <div id="routeProgress">0 / 0 m</div>
+        <div id="routePercent">0%</div>
+      </div>
+      <div class="card">
+        <div class="lbl">Projected finish</div>
+        <div id="projEta">--</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="settingsView" style="display:none;">
+    <button id="backBtn">&#8592; Back</button>
+
+    <div class="btnrow">
+      <button id="endBtn">End session</button>
+      <button id="exportBtn">Export JSON</button>
+      <button id="importBtn">Import JSON</button>
+      <button id="resetBtn" class="danger">Reset all data</button>
+      <button id="fullscreenBtn" class="accent">Fullscreen</button>
+      <button id="installBtn" class="accent" style="display:none;">Install app</button>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <div class="lbl">3D view — PC address</div>
+      <div style="font-size:12px; color:#888; margin:4px 0 8px;">
+        Stored only on this device, never in the app's source. Find it on the streaming PC via <code>ipconfig</code> (Windows), under your Wi-Fi adapter's IPv4 address.
+      </div>
+      <input id="streamHostInput" type="text" placeholder="e.g. 192.168.1.50"
+             style="width:100%; box-sizing:border-box; background:#1c1c1e; border:1px solid #333; color:#eee; padding:9px 10px; border-radius:8px; font-size:14px;">
+      <div class="btnrow" style="margin-top:8px;">
+        <button id="saveStreamHostBtn" class="accent">Save address</button>
+      </div>
+    </div>
+
+    <details>
+      <summary>Debug log</summary>
+      <pre id="log"></pre>
+    </details>
+  </div>
+
+ </div>
+ <div id="panelFooter">
+   <button id="settingsBtn">&#9881; Settings</button>
+   <button id="statsBtn">Stats &#128202;&#65038;</button>
+ </div>
+</div>
+
+<div id="statsPage">
+  <div id="statsHeader">
+    <button id="statsBack">&#8592;</button>
+    <h2>Stats</h2>
+  </div>
+
+  <div class="card">
+    <div class="lbl" style="margin-bottom:10px;">Rowing days</div>
+    <div id="heatmapScroll">
+      <div id="heatmapMonths"></div>
+      <div id="heatmapBody">
+        <div id="heatmapDayLabels">
+          <div></div><div>Mon</div><div></div><div>Wed</div><div></div><div>Fri</div><div></div>
+        </div>
+        <div id="heatmapGrid"></div>
+      </div>
+    </div>
+    <div id="heatmapLegend">
+      Less
+      <div class="hm-cell"></div><div class="hm-cell l1"></div><div class="hm-cell l2"></div>
+      <div class="hm-cell l3"></div><div class="hm-cell l4"></div>
+      More
+    </div>
+  </div>
+
+  <div class="card recordsGrid">
+    <div class="recordCard">
+      <div class="lbl">Longest session</div>
+      <div class="big" id="recLongest">--</div>
+      <div class="sub" id="recLongestSub">--</div>
+    </div>
+    <div class="recordCard">
+      <div class="lbl">Fastest average pace</div>
+      <div class="big" id="recFastest">--</div>
+      <div class="sub" id="recFastestSub">--</div>
+    </div>
+  </div>
+
+  <div class="card chartCard">
+    <div class="chartToggle">
+      <button id="volWeekBtn" class="active">Weekly</button>
+      <button id="volMonthBtn">Monthly</button>
+    </div>
+    <div class="lbl" style="margin-bottom:8px;">Volume (meters)</div>
+    <canvas id="volumeChart"></canvas>
+  </div>
+
+  <div class="card chartCard">
+    <div class="lbl" style="margin-bottom:8px;">Average pace per session (sec / 500m, lower = faster)</div>
+    <canvas id="paceChart"></canvas>
+  </div>
+</div>
+
+<input type="file" id="importFile" accept="application/json" hidden>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const log = m => { const el = $('log'); el.textContent += m + '\n'; el.scrollTop = 1e9; };
+
+/* =========================================================================
+   STORAGE — versioned keys. Sessions log is the source of truth; totals are
+   always derived by summing it, never stored redundantly. The route file is
+   NOT referenced from storage anywhere, so swapping route.gpx later never
+   touches saved progress.
+   ========================================================================= */
+const SESSIONS_KEY = 'pm5_sessions_v1';
+const PENDING_KEY  = 'pm5_pending_v1';
+const LEGACY_TOTALS_KEY = 'pm5_totals_v1'; // from the very first prototype
+const STREAM_HOST_KEY = 'pm5_stream_host_v1'; // this device only -- never hardcoded, never committed
+
+function loadStreamHost() {
+  try { return localStorage.getItem(STREAM_HOST_KEY) || ''; }
+  catch (e) { return ''; }
+}
+function saveStreamHost(host) {
+  try { localStorage.setItem(STREAM_HOST_KEY, host); }
+  catch (e) { log('stream host save failed: ' + e.message); }
+}
+
+function loadSessions() {
+  try {
+    const raw = localStorage.getItem(SESSIONS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) { log('sessions read failed: ' + e.message); }
+  return [];
+}
+function saveSessions(list) {
+  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(list)); }
+  catch (e) { log('sessions save failed: ' + e.message); }
+}
+function loadPending() {
+  try {
+    const raw = localStorage.getItem(PENDING_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) { log('pending read failed: ' + e.message); }
+  return null;
+}
+function savePending(p) {
+  try {
+    if (p) localStorage.setItem(PENDING_KEY, JSON.stringify(p));
+    else localStorage.removeItem(PENDING_KEY);
+  } catch (e) { log('pending save failed: ' + e.message); }
+}
+
+let sessions = loadSessions();
+
+// One-time migration from the old single-number prototype, so early test
+// rows aren't thrown away by the schema change.
+(function migrateLegacy() {
+  if (sessions.length) return;
+  try {
+    const raw = localStorage.getItem(LEGACY_TOTALS_KEY);
+    if (!raw) return;
+    const old = JSON.parse(raw);
+    if (old && old.distance > 0) {
+      sessions.push({
+        id: 'legacy-' + Date.now(),
+        startTime: null, endTime: Date.now(),
+        distance: old.distance, duration: old.time,
+        avgPace: null, avgStrokeRate: null, calories: null,
+        dragFactor: null, heartRateEnd: null,
+        cumulativeDistanceAfter: old.distance,
+        note: 'Imported from earlier prototype version'
+      });
+      saveSessions(sessions);
+      log('Migrated legacy totals: ' + old.distance.toFixed(0) + ' m');
+    }
+    localStorage.removeItem(LEGACY_TOTALS_KEY);
+  } catch (e) { log('legacy migration failed: ' + e.message); }
+})();
+
+function totalDistance() { return sessions.reduce((s, x) => s + x.distance, 0); }
+function totalDuration() { return sessions.reduce((s, x) => s + x.duration, 0); }
+
+function fmtHMS(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
+  return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+function fmtPace(sec) {
+  if (sec == null || !isFinite(sec) || sec <= 0) return '--:--';
+  const m = Math.floor(sec/60), s = Math.round(sec%60);
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+
+/* =========================================================================
+   PENDING (live, unfinished) SESSION
+   Recovered on load in case the tab/app closed mid-row, so nothing is lost.
+   ========================================================================= */
+let pending = loadPending();
+const pendingRecoveryNote = pending ? 'Recovered after app was closed mid-session' : null;
+// NOTE: the actual finalize() call for this happens in init(), after the map
+// and sessionMarkersLayer exist — finalizePending() draws a marker, which
+// would fail if called this early.
+
+function finalizePending(note) {
+  if (!pending) return;
+  if (pending.lastDistance > 0) {
+    sessions.push({
+      id: pending.id,
+      startTime: pending.startTime,
+      endTime: Date.now(),
+      distance: pending.lastDistance,
+      duration: pending.lastElapsed,
+      avgPace: pending.avgPace, avgStrokeRate: pending.strokeRate,
+      calories: pending.calories, dragFactor: pending.dragFactor,
+      heartRateEnd: pending.heartRate,
+      cumulativeDistanceAfter: totalDistance() + pending.lastDistance,
+      note: note || null
+    });
+    saveSessions(sessions);
+    renderSessionMarkers();
+    log(`Session finalized: ${pending.lastDistance.toFixed(0)} m` + (note ? ' (' + note + ')' : ''));
+  }
+  pending = null;
+  savePending(null);
+}
+
+function newPending(elapsed, distance) {
+  pending = {
+    id: 'sess-' + Date.now(),
+    startTime: Date.now() - elapsed * 1000,
+    lastElapsed: elapsed, lastDistance: distance,
+    avgPace: null, strokeRate: null, calories: null, dragFactor: null, heartRate: null,
+    lastSaveTime: 0
+  };
+}
+
+/* =========================================================================
+   UI RENDER
+   ========================================================================= */
+function renderTotals() {
+  const liveDist = pending ? pending.lastDistance : 0;
+  const liveTime = pending ? pending.lastElapsed : 0;
+  const total = totalDistance() + liveDist;
+  $('totalDist').textContent = total.toFixed(0);
+  $('totalTime').textContent = fmtHMS(totalDuration() + liveTime);
+  $('sessDist').textContent = liveDist.toFixed(0) + ' m';
+  $('sessTime').textContent = fmtHMS(liveTime);
+  updateMapPosition(total);
+  renderProjection(total);
+}
+
+/* =========================================================================
+   ROUTE — loaded from route.gpx at runtime. Replacing that file later never
+   touches saved progress; only where the dot lands changes.
+   ========================================================================= */
+let routePoints = [];   // [[lat,lon], ...]
+let cumDist = [];        // meters, same length as routePoints
+let routeLen = 0;
+let waypoints = [];       // [{name, distanceM}]
+
+function haversine(a, b) {
+  const R = 6371000, toRad = d => d * Math.PI / 180;
+  const dLat = toRad(b[0]-a[0]), dLon = toRad(b[1]-a[1]);
+  const la1 = toRad(a[0]), la2 = toRad(b[0]);
+  const h = Math.sin(dLat/2)**2 + Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+async function loadRoute() {
+  const res = await fetch('route.gpx', { cache: 'no-store' });
+  const text = await res.text();
+  const xml = new DOMParser().parseFromString(text, 'application/xml');
+  const pts = Array.from(xml.querySelectorAll('trkpt')).map(pt => [
+    parseFloat(pt.getAttribute('lat')), parseFloat(pt.getAttribute('lon'))
+  ]);
+  routePoints = pts;
+  cumDist = [0];
+  for (let i = 1; i < pts.length; i++) {
+    cumDist.push(cumDist[i-1] + haversine(pts[i-1], pts[i]));
+  }
+  routeLen = cumDist[cumDist.length - 1] || 0;
+  log(`Route loaded: ${pts.length} points, ${routeLen.toFixed(0)} m`);
+}
+
+async function loadWaypoints() {
+  try {
+    const res = await fetch('waypoints.json', { cache: 'no-store' });
+    waypoints = await res.json();
+    waypoints.sort((a,b) => a.distanceM - b.distanceM);
+  } catch (e) { log('waypoints load failed: ' + e.message); }
+}
+
+// Given total meters rowed, find the lat/lon on the route (or the end +
+// overflow if you've rowed further than the currently mapped route).
+function positionAtDistance(d) {
+  if (!routePoints.length) return null;
+  if (d <= 0) return { point: routePoints[0], overflow: 0, index: 0 };
+  if (d >= routeLen) return { point: routePoints[routePoints.length-1], overflow: d - routeLen, index: routePoints.length-1 };
+  // linear scan is fine for a few thousand points; route is fixed-size per session
+  let i = 1;
+  while (i < cumDist.length && cumDist[i] < d) i++;
+  const segStart = cumDist[i-1], segEnd = cumDist[i];
+  const t = segEnd > segStart ? (d - segStart) / (segEnd - segStart) : 0;
+  const [lat1, lon1] = routePoints[i-1], [lat2, lon2] = routePoints[i];
+  return { point: [lat1 + (lat2-lat1)*t, lon1 + (lon2-lon1)*t], overflow: 0, index: i-1 };
+}
+
+function nearestWaypointBehind(d) {
+  let best = null;
+  for (const w of waypoints) { if (w.distanceM <= d) best = w; else break; }
+  return best;
+}
+
+/* =========================================================================
+   MAP
+   ========================================================================= */
+const map = L.map('map', { zoomControl: false, minZoom: 5, maxZoom: 17 }).setView([50.11, 8.68], 12);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  subdomains: 'abcd',
+  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+  maxZoom: 20
+}).addTo(map);
+
+let traveledLine = null, remainingLine = null, posMarker = null;
+let lastKnownPoint = null;
+
+// Locked-camera follow mode: the marker stays pinned at screen center and the
+// map recenters under it on every update, at whatever zoom the user set.
+// Panning or pinch-zooming (user gestures only — our own recentering never
+// triggers these) turns it off; the recenter button turns it back on.
+let followMode = true;
+
+function setRecenterBtnState() {
+  $('recenterBtn').classList.toggle('needed', !followMode);
+}
+
+// Where the map's center needs to be so that `latlng` lands at the visual
+// center of the space NOT covered by the (possibly open) side panel.
+function computeFollowCenter(latlng) {
+  const zoom = map.getZoom();
+  const size = map.getSize(); // L.Point {x: width, y: height}
+  const panelOpen = !panelEl.classList.contains('collapsed');
+  const panelWidth = panelOpen ? panelEl.offsetWidth : 0;
+  const desired = L.point(panelWidth + (size.x - panelWidth) / 2, size.y / 2);
+  const containerCenter = L.point(size.x / 2, size.y / 2);
+  const targetPx = map.project(latlng, zoom);
+  const centerPx = targetPx.subtract(desired.subtract(containerCenter));
+  return map.unproject(centerPx, zoom);
+}
+
+function drawRoute() {
+  if (!routePoints.length) return;
+  remainingLine = L.polyline(routePoints, { color:'#3a6ea8', weight:3, opacity:0.6 }).addTo(map);
+  traveledLine = L.polyline([], { color:'#5fd3a0', weight:4, opacity:0.95 }).addTo(map);
+  const icon = L.divIcon({ className:'', html:'<div class="marker-dot"></div>', iconSize:[14,14], iconAnchor:[7,7] });
+  posMarker = L.marker(routePoints[0], { icon }).addTo(map);
+  map.fitBounds(remainingLine.getBounds(), { padding:[30,30] });
+}
+
+// 'dragstart' and 'zoomstart' only fire from user gestures — our own
+// setView() calls below never change zoom and Leaflet doesn't emit
+// dragstart for programmatic pans, so this can't self-trigger.
+map.on('dragstart', () => { followMode = false; setRecenterBtnState(); });
+map.on('zoomstart', () => { followMode = false; setRecenterBtnState(); });
+
+$('recenterBtn').addEventListener('click', () => {
+  followMode = true;
+  setRecenterBtnState();
+  if (lastKnownPoint) map.setView(computeFollowCenter(lastKnownPoint), map.getZoom(), { animate: true });
+});
+
+function updateMapPosition(totalMeters) {
+  if (!routePoints.length) return;
+  const res = positionAtDistance(totalMeters);
+  if (!res) return;
+  lastKnownPoint = res.point;
+  posMarker.setLatLng(res.point);
+  const idx = res.index;
+  traveledLine.setLatLngs([...routePoints.slice(0, idx+1), res.point]);
+
+  if (followMode) map.setView(computeFollowCenter(res.point), map.getZoom(), { animate: false });
+
+  const overWrap = $('overflowWrap');
+  if (res.overflow > 0) {
+    overWrap.innerHTML = `<div class="overflow-badge">${res.overflow.toFixed(0)} m past the end of the mapped route — extend route.gpx</div>`;
+  } else {
+    overWrap.innerHTML = '';
+  }
+
+  const wp = nearestWaypointBehind(totalMeters);
+  $('waypointText').textContent = wp ? `Last passed: ${wp.name}` : '';
+
+  $('routeProgress').textContent = `${totalMeters.toFixed(0)} / ${routeLen.toFixed(0)} m`;
+  $('routePercent').textContent = routeLen > 0 ? (totalMeters / routeLen * 100).toFixed(1) + '%' : '--';
+
+  sendDistanceToUnreal(totalMeters);
+}
+
+/* =========================================================================
+   SESSION-END MARKERS — a small dot on the route for every finished session,
+   labeled with the date it was reached. Rebuilt whenever sessions[] changes.
+   ========================================================================= */
+const sessionMarkersLayer = L.layerGroup().addTo(map);
+
+function renderSessionMarkers() {
+  sessionMarkersLayer.clearLayers();
+  if (!routePoints.length) return;
+  for (const s of sessions) {
+    const res = positionAtDistance(s.cumulativeDistanceAfter);
+    if (!res) continue;
+    const dateStr = new Date(s.endTime).toLocaleDateString();
+    L.circleMarker(res.point, {
+      radius: 5, color: '#ffd28a', weight: 2, fillColor: '#ffd28a', fillOpacity: 0.9
+    }).bindTooltip(dateStr).addTo(sessionMarkersLayer);
+  }
+}
+
+/* =========================================================================
+   PROJECTION — days:hours:minutes to reach the end of the CURRENTLY loaded
+   route.gpx, based on your average meters/day since your first session.
+   ========================================================================= */
+function fmtDHM(totalSeconds) {
+  const totalMin = Math.round(totalSeconds / 60);
+  const d = Math.floor(totalMin / 1440);
+  const h = Math.floor((totalMin % 1440) / 60);
+  const m = totalMin % 60;
+  return `${d}:${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+
+function renderProjection(totalMeters) {
+  const el = $('projEta');
+  const starts = sessions.map(s => s.startTime).filter(Boolean);
+  if (!starts.length || !routeLen) { el.textContent = 'Not enough data yet'; return; }
+  const days = (Date.now() - Math.min(...starts)) / 86400000;
+  if (days < 0.5 || totalMeters <= 0) { el.textContent = 'Not enough data yet'; return; }
+  const perDay = totalMeters / days;
+  const remaining = routeLen - totalMeters;
+  if (remaining <= 0) { el.textContent = 'Past mapped route end'; return; }
+  const etaSeconds = (remaining / perDay) * 86400;
+  el.textContent = fmtDHM(etaSeconds) + '  (d:h:m)';
+}
+
+/* =========================================================================
+   3D VIEW — Pixel Streaming from the Unreal boat scene. The PC's address
+   lives only in STREAM_HOST_KEY (localStorage, this device only); it is
+   never written into this file, since the file is public.
+   ========================================================================= */
+let pixelStreaming = null;
+let pixelStreamingModulePromise = null;
+
+function loadPixelStreamingModule() {
+  if (!pixelStreamingModulePromise) {
+    // Self-contained bundle of @epicgames-ps/lib-pixelstreamingfrontend-ue5.6@0.3.0
+    // (MIT) with its dependencies baked in. Loaded from the repo rather than a
+    // CDN, because jsDelivr's automatic ESM conversion breaks one of its deps.
+    pixelStreamingModulePromise = import('./vendor/pixelstreaming-ue5.6.js');
+  }
+  return pixelStreamingModulePromise;
+}
+
+async function ensurePixelStreaming() {
+  if (pixelStreaming) return pixelStreaming;
+  const host = loadStreamHost();
+  if (!host) { log('3D view: no PC address saved yet -- set it in Settings.'); return null; }
+
+  const { Config, PixelStreaming, TextParameters } = await loadPixelStreamingModule();
+  const config = new Config({
+    initialSettings: {
+      AutoConnect: false,     // we call connect() ourselves when the view opens
+      AutoPlayVideo: true,    // no play button exists in our UI, so it must autoplay
+      StartVideoMuted: true,  // muted autoplay is always allowed by browsers; there's no audio anyway
+      TimeoutIfIdle: false,   // AFK kick-out -- you never touch the stream while rowing
+      HoveringMouse: true     // don't grab/lock the mouse pointer when testing on the PC
+    }
+  });
+  config.setTextSetting(TextParameters.SignallingServerUrl, `ws://${host}`);
+
+  pixelStreaming = new PixelStreaming(config);
+  // NOTE: videoElementParent is the one property name worth checking in
+  // devtools (console.log(pixelStreaming)) if the video doesn't appear.
+  $('streamView').appendChild(pixelStreaming.videoElementParent);
+  log('3D view: connecting to ' + host);
+  return pixelStreaming;
+}
+
+let showingStream = false;
+async function toggleStreamView() {
+  if (!showingStream && !loadStreamHost()) {
+    log('3D view: set a PC address in Settings first.');
+    alert("Set the PC's address in Settings first (gear icon -> 3D view -- PC address).");
+    return;
+  }
+
+  showingStream = !showingStream;
+  $('map').style.display = showingStream ? 'none' : 'block';
+  $('streamView').style.display = showingStream ? 'block' : 'none';
+  $('streamToggleBtn').textContent = showingStream ? 'Show Map' : 'Show 3D View';
+
+  if (showingStream) {
+    const stream = await ensurePixelStreaming();
+    if (stream) stream.connect();
+  }
+}
+$('streamToggleBtn').addEventListener('click', toggleStreamView);
+
+// Called every time total distance changes -- see updateMapPosition above.
+// Safe to call before the stream connects; it's a no-op until then.
+function sendDistanceToUnreal(distanceMeters) {
+  if (pixelStreaming) pixelStreaming.emitUIInteraction({ distance: distanceMeters });
+}
+
+/* =========================================================================
+   BLE — Concept2 PM5 (Bluetooth Smart Interface Definition rev 1.30)
+   ========================================================================= */
+const uuid = id => `ce06${id}-43e5-11e4-916c-0800200c9a66`;
+const ROWING_SERVICE = uuid('0030');
+const CH_GENERAL   = uuid('0031'); // elapsed, distance, workout/rowing state, drag factor
+const CH_ADD1      = uuid('0032'); // speed, stroke rate, heart rate, pace
+const CH_ADD2      = uuid('0033'); // calories
+
+const u16 = (dv,o) => dv.getUint8(o) | (dv.getUint8(o+1)<<8);
+const u24 = (dv,o) => dv.getUint8(o) | (dv.getUint8(o+1)<<8) | (dv.getUint8(o+2)<<16);
+
+function onGeneralStatus(e) {
+  const dv = e.target.value;
+  if (dv.byteLength < 19) return;
+  const elapsed = u24(dv,0) / 100;
+  const distance = u24(dv,3) / 10;
+  const dragFactor = dv.getUint8(18);
+
+  if (!pending) {
+    newPending(elapsed, distance);
+  } else if (distance < pending.lastDistance - 2 || elapsed < pending.lastElapsed - 1) {
+    // PM5 counters dropped back down -> a new row was started on the machine
+    finalizePending('New row started on PM5');
+    newPending(elapsed, distance);
+  }
+
+  pending.lastElapsed = elapsed;
+  pending.lastDistance = distance;
+  pending.dragFactor = dragFactor;
+
+  renderTotals();
+
+  const now = Date.now();
+  if (now - pending.lastSaveTime > 2000) {
+    pending.lastSaveTime = now;
+    savePending(pending);
+  }
+}
+
+function onAdd1(e) {
+  const dv = e.target.value;
+  if (dv.byteLength < 17 || !pending) return;
+  const strokeRate = dv.getUint8(5);
+  const hr = dv.getUint8(6);
+  const currentPace = u16(dv,7) / 100;  // seconds per 500m
+  const avgPace = u16(dv,9) / 100;      // seconds per 500m — this is the field session records need
+  pending.strokeRate = strokeRate;
+  pending.heartRate = hr === 255 ? null : hr;
+  pending.avgPace = avgPace;
+  $('livePace').textContent = fmtPace(currentPace) + ' /500m';
+  $('liveSpm').textContent = strokeRate + ' spm';
+}
+
+function onAdd2(e) {
+  const dv = e.target.value;
+  if (dv.byteLength < 20 || !pending) return;
+  pending.calories = u16(dv,6);
+}
+
+let bleDevice = null;
+
+async function connect() {
+  if (!navigator.bluetooth) { log('Web Bluetooth not available — use Chrome on Android.'); return; }
+  try {
+    $('statusPill').textContent = 'Searching…';
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'PM5' }],
+      optionalServices: [ROWING_SERVICE]
+    });
+    bleDevice = device;
+    log('Selected: ' + device.name);
+    device.addEventListener('gattserverdisconnected', () => {
+      $('statusPill').textContent = 'Disconnected';
+      $('statusPill').classList.remove('on');
+      $('connectBtn').disabled = false;
+      finalizePending('Disconnected from PM5');
+      releaseWakeLock();
+      log('Disconnected');
+    });
+
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(ROWING_SERVICE);
+
+    const chGeneral = await service.getCharacteristic(CH_GENERAL);
+    chGeneral.addEventListener('characteristicvaluechanged', onGeneralStatus);
+    await chGeneral.startNotifications();
+
+    try {
+      const chAdd1 = await service.getCharacteristic(CH_ADD1);
+      chAdd1.addEventListener('characteristicvaluechanged', onAdd1);
+      await chAdd1.startNotifications();
+    } catch (e) { log('additional status 1 unavailable: ' + e.message); }
+
+    try {
+      const chAdd2 = await service.getCharacteristic(CH_ADD2);
+      chAdd2.addEventListener('characteristicvaluechanged', onAdd2);
+      await chAdd2.startNotifications();
+    } catch (e) { log('additional status 2 unavailable: ' + e.message); }
+
+    $('statusPill').textContent = 'Connected: ' + device.name;
+    $('statusPill').classList.add('on');
+    $('connectBtn').disabled = true;
+    requestWakeLock();
+    log('Subscribed. Start rowing.');
+  } catch (err) {
+    $('statusPill').textContent = 'Disconnected';
+    log('Error: ' + err.message);
+  }
+}
+
+/* =========================================================================
+   BUTTONS
+   ========================================================================= */
+$('connectBtn').addEventListener('click', connect);
+
+$('endBtn').addEventListener('click', () => {
+  if (!pending || pending.lastDistance === 0) { log('No active session to end.'); return; }
+  finalizePending('Ended manually');
+  renderTotals();
+});
+
+$('resetBtn').addEventListener('click', () => {
+  if (!confirm('Erase ALL saved sessions and progress? This cannot be undone.')) return;
+  sessions = [];
+  saveSessions(sessions);
+  pending = null;
+  savePending(null);
+  renderSessionMarkers();
+  renderTotals();
+  log('All data reset.');
+});
+
+$('exportBtn').addEventListener('click', () => {
+  if (pending) finalizePending('Auto-closed for export'); // don't export a half-open session silently lost later
+  const payload = { version: 1, exportedAt: new Date().toISOString(), sessions };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `pm5-progress-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  renderTotals();
+});
+
+$('streamHostInput').value = loadStreamHost();
+$('saveStreamHostBtn').addEventListener('click', () => {
+  const host = $('streamHostInput').value.trim();
+  saveStreamHost(host);
+  pixelStreaming = null; // force a fresh connection using the new address next time
+  log('3D view address saved: ' + (host || '(cleared)'));
+});
+
+$('importBtn').addEventListener('click', () => $('importFile').click());
+$('importFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    const incoming = Array.isArray(data.sessions) ? data.sessions : [];
+    const byId = new Map(sessions.map(s => [s.id, s]));
+    let added = 0;
+    for (const s of incoming) {
+      if (!byId.has(s.id)) { byId.set(s.id, s); added++; }
+    }
+    sessions = Array.from(byId.values()).sort((a,b) => (a.startTime||0) - (b.startTime||0));
+    saveSessions(sessions);
+    renderSessionMarkers();
+    renderTotals();
+    log(`Imported: ${added} new session(s), ${incoming.length - added} already present.`);
+  } catch (err) {
+    log('Import failed: ' + err.message);
+  }
+  e.target.value = '';
+});
+
+/* =========================================================================
+   PANEL COLLAPSE (left sidebar, for tablet landscape use)
+   ========================================================================= */
+const panelEl = $('panel'), toggleEl = $('panelToggle');
+function positionToggle() {
+  toggleEl.style.left = panelEl.classList.contains('collapsed') ? '0px' : panelEl.offsetWidth + 'px';
+}
+toggleEl.addEventListener('click', () => {
+  panelEl.classList.toggle('collapsed');
+  toggleEl.innerHTML = panelEl.classList.contains('collapsed') ? '&#8250;' : '&#8249;';
+  positionToggle();
+  setTimeout(() => {
+    map.invalidateSize();
+    if (followMode && lastKnownPoint) map.setView(computeFollowCenter(lastKnownPoint), map.getZoom(), { animate: true });
+  }, 230); // after the CSS transition
+});
+window.addEventListener('resize', positionToggle);
+
+function showSettings(show) {
+  $('mainView').style.display = show ? 'none' : 'block';
+  $('settingsView').style.display = show ? 'block' : 'none';
+  $('panelFooter').style.display = show ? 'none' : 'block';
+}
+$('settingsBtn').addEventListener('click', () => showSettings(true));
+$('backBtn').addEventListener('click', () => showSettings(false));
+
+/* =========================================================================
+   WAKE LOCK — keeps the screen on while connected, like a video player does.
+   Released on disconnect; the browser also releases it whenever the tab is
+   hidden, so we re-acquire it on visibilitychange if we still want it.
+   ========================================================================= */
+let wakeLock = null;
+let wakeLockWanted = false;
+
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) {
+    log('Screen Wake Lock not supported on this browser — set your tablet screen timeout manually.');
+    return;
+  }
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLockWanted = true;
+    log('Screen wake lock acquired.');
+    wakeLock.addEventListener('release', () => log('Screen wake lock released.'));
+  } catch (e) { log('Wake lock failed: ' + e.message); }
+}
+function releaseWakeLock() {
+  wakeLockWanted = false;
+  if (wakeLock) { wakeLock.release(); wakeLock = null; }
+}
+document.addEventListener('visibilitychange', async () => {
+  if (wakeLockWanted && document.visibilityState === 'visible') {
+    try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+  }
+});
+
+/* =========================================================================
+   FULLSCREEN + PWA INSTALL
+   Fullscreen API works immediately but isn't persistent (exits on sleep/app
+   switch). Installing as a PWA (manifest.json, "standalone" display) is the
+   robust fix — it removes the browser chrome entirely, like a real app icon.
+   ========================================================================= */
+$('fullscreenBtn').addEventListener('click', () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().catch(e => log('Fullscreen failed: ' + e.message));
+});
+
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  $('installBtn').style.display = 'block';
+});
+$('installBtn').addEventListener('click', async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  $('installBtn').style.display = 'none';
+});
+
+// Safety net: persist pending if the tab is hidden/closed mid-row.
+document.addEventListener('visibilitychange', () => { if (document.hidden && pending) savePending(pending); });
+window.addEventListener('beforeunload', () => { if (pending) savePending(pending); });
+
+/* =========================================================================
+   STATS PAGE — computed fresh from `sessions` every time it's opened.
+   Nothing here is stored; it's all derived, same principle as the totals.
+   Falls back to endTime for older sessions that have no startTime (e.g.
+   the legacy-migrated entry from the very first prototype).
+   ========================================================================= */
+const sessionDate = s => s.startTime || s.endTime;
+
+function dateKey(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function renderHeatmap() {
+  const byDay = {};
+  for (const s of sessions) {
+    const k = dateKey(sessionDate(s));
+    byDay[k] = (byDay[k] || 0) + s.distance;
+  }
+  const values = Object.values(byDay).filter(v => v > 0).sort((a,b) => a-b);
+  const q = p => values.length ? values[Math.min(values.length-1, Math.floor(p*values.length))] : 0;
+  const t1 = q(0.25), t2 = q(0.5), t3 = q(0.75);
+  function levelFor(m) {
+    if (!m) return '';
+    if (m <= t1) return 'l1';
+    if (m <= t2) return 'l2';
+    if (m <= t3) return 'l3';
+    return 'l4';
+  }
+
+  const totalDays = 365;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const start = new Date(today.getTime() - totalDays * 86400000);
+  start.setDate(start.getDate() - start.getDay()); // align to Sunday
+
+  const grid = $('heatmapGrid'), monthsRow = $('heatmapMonths');
+  grid.innerHTML = ''; monthsRow.innerHTML = '';
+
+  let cursor = new Date(start), col = 0, lastMonth = -1;
+  while (cursor <= today) {
+    if (cursor.getDate() <= 7 && cursor.getMonth() !== lastMonth) {
+      lastMonth = cursor.getMonth();
+      const lbl = document.createElement('div');
+      lbl.style.gridColumn = String(col+1);
+      lbl.textContent = cursor.toLocaleString(undefined, { month:'short' });
+      monthsRow.appendChild(lbl);
+    }
+    for (let row = 0; row < 7; row++) {
+      const cell = document.createElement('div');
+      if (cursor > today) { cell.className = 'hm-cell'; cell.style.visibility = 'hidden'; }
+      else {
+        const k = dateKey(cursor.getTime());
+        const m = byDay[k] || 0;
+        cell.className = 'hm-cell ' + levelFor(m);
+        cell.title = `${cursor.toDateString()}: ${m ? m.toFixed(0) + ' m' : 'no rowing'}`;
+      }
+      grid.appendChild(cell);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    col++;
+  }
+}
+
+function renderRecords() {
+  if (!sessions.length) { $('recLongest').textContent = '--'; $('recFastest').textContent = '--'; return; }
+  const longest = sessions.reduce((a,b) => b.distance > a.distance ? b : a);
+  $('recLongest').textContent = longest.distance.toFixed(0) + ' m';
+  $('recLongestSub').textContent = new Date(sessionDate(longest)).toLocaleDateString();
+
+  const withPace = sessions.filter(s => typeof s.avgPace === 'number' && s.avgPace > 0);
+  if (withPace.length) {
+    const fastest = withPace.reduce((a,b) => b.avgPace < a.avgPace ? b : a);
+    $('recFastest').textContent = fmtPace(fastest.avgPace) + ' /500m';
+    $('recFastestSub').textContent = new Date(sessionDate(fastest)).toLocaleDateString();
+  } else {
+    $('recFastest').textContent = 'No pace data yet';
+    $('recFastestSub').textContent = '';
+  }
+}
+
+function isoWeekKey(ts) {
+  const d = new Date(ts); d.setHours(0,0,0,0);
+  d.setDate(d.getDate() + 3 - ((d.getDay()+6)%7));
+  const week1 = new Date(d.getFullYear(),0,4);
+  const weekNo = 1 + Math.round(((d - week1) / 86400000 - 3 + ((week1.getDay()+6)%7)) / 7);
+  return `${d.getFullYear()}-W${String(weekNo).padStart(2,'0')}`;
+}
+function monthKey(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function aggregateDistance(keyFn) {
+  const map = new Map();
+  for (const s of sessions) { const k = keyFn(sessionDate(s)); map.set(k, (map.get(k)||0) + s.distance); }
+  const keys = Array.from(map.keys()).sort();
+  return { labels: keys, values: keys.map(k => map.get(k)) };
+}
+
+let volumeChart = null, paceChart = null, volumeMode = 'week';
+
+function renderVolumeChart(mode) {
+  volumeMode = mode;
+  const { labels, values } = aggregateDistance(mode === 'week' ? isoWeekKey : monthKey);
+  const ctx = $('volumeChart').getContext('2d');
+  if (volumeChart) volumeChart.destroy();
+  volumeChart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ data: values, backgroundColor: '#2f7de1', borderRadius: 4 }] },
+    options: {
+      responsive: true,
+      plugins: { legend: { display:false } },
+      scales: {
+        x: { ticks:{ color:'#888', maxTicksLimit: 10 }, grid:{ display:false } },
+        y: { ticks:{ color:'#888' }, grid:{ color:'rgba(255,255,255,0.06)' } }
+      }
+    }
+  });
+}
+
+function renderPaceChart() {
+  const sorted = sessions.filter(s => typeof s.avgPace === 'number' && s.avgPace > 0)
+                          .sort((a,b) => sessionDate(a) - sessionDate(b));
+  const ctx = $('paceChart').getContext('2d');
+  if (paceChart) paceChart.destroy();
+  paceChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: sorted.map(s => new Date(sessionDate(s)).toLocaleDateString(undefined,{month:'short',day:'numeric'})),
+      datasets: [{
+        data: sorted.map(s => s.avgPace),
+        borderColor: '#5fd3a0', backgroundColor: 'rgba(95,211,160,0.15)',
+        pointRadius: 0, tension: 0.3, fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display:false } },
+      scales: {
+        x: { ticks:{ color:'#888', maxTicksLimit: 8 }, grid:{ display:false } },
+        y: { ticks:{ color:'#888' }, grid:{ color:'rgba(255,255,255,0.06)' } }
+      }
+    }
+  });
+}
+
+function openStats() {
+  renderHeatmap();
+  renderRecords();
+  renderVolumeChart(volumeMode);
+  renderPaceChart();
+  $('statsPage').style.display = 'block';
+}
+$('statsBtn').addEventListener('click', openStats);
+$('statsBack').addEventListener('click', () => { $('statsPage').style.display = 'none'; });
+$('volWeekBtn').addEventListener('click', () => {
+  $('volWeekBtn').classList.add('active'); $('volMonthBtn').classList.remove('active');
+  renderVolumeChart('week');
+});
+$('volMonthBtn').addEventListener('click', () => {
+  $('volMonthBtn').classList.add('active'); $('volWeekBtn').classList.remove('active');
+  renderVolumeChart('month');
+});
+
+/* =========================================================================
+   INIT
+   ========================================================================= */
+(async function init() {
+  log('Secure context: ' + window.isSecureContext);
+  log('Web Bluetooth: ' + !!navigator.bluetooth);
+  positionToggle();
+  setRecenterBtnState();
+  await loadRoute();
+  await loadWaypoints();
+  drawRoute();
+  if (pendingRecoveryNote) finalizePending(pendingRecoveryNote);
+  renderSessionMarkers();
+  renderTotals();
+})();
+</script>
+</body>
+</html>
