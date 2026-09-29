@@ -15,6 +15,9 @@
   #map .leaflet-control-attribution { background:rgba(0,0,0,0.5); color:#aaa; }
   #map .leaflet-control-attribution a { color:#8cf; }
 
+  #streamView { position:absolute; inset:0; background:#000; display:none; }
+  #streamView video { width:100%; height:100%; object-fit:contain; }
+
   #panel {
     position:absolute; top:0; left:0; bottom:0; z-index:1000;
     width:320px; max-width:86vw;
@@ -121,6 +124,7 @@
 <body>
 
 <div id="map"></div>
+<div id="streamView"></div>
 
 <button id="panelToggle">&#8249;</button>
 <button id="recenterBtn" title="Recenter on my position">&#8982;</button>
@@ -132,6 +136,10 @@
     <div class="row">
       <div id="statusPill">Disconnected</div>
       <button id="connectBtn">Connect</button>
+    </div>
+
+    <div class="btnrow">
+      <button id="streamToggleBtn" class="accent">Show 3D View</button>
     </div>
 
     <div class="row" style="margin-top:14px;">
@@ -180,6 +188,18 @@
       <button id="resetBtn" class="danger">Reset all data</button>
       <button id="fullscreenBtn" class="accent">Fullscreen</button>
       <button id="installBtn" class="accent" style="display:none;">Install app</button>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <div class="lbl">3D view — PC address</div>
+      <div style="font-size:12px; color:#888; margin:4px 0 8px;">
+        Stored only on this device, never in the app's source. Find it on the streaming PC via <code>ipconfig</code> (Windows), under your Wi-Fi adapter's IPv4 address.
+      </div>
+      <input id="streamHostInput" type="text" placeholder="e.g. 192.168.1.50"
+             style="width:100%; box-sizing:border-box; background:#1c1c1e; border:1px solid #333; color:#eee; padding:9px 10px; border-radius:8px; font-size:14px;">
+      <div class="btnrow" style="margin-top:8px;">
+        <button id="saveStreamHostBtn" class="accent">Save address</button>
+      </div>
     </div>
 
     <details>
@@ -266,6 +286,16 @@ const log = m => { const el = $('log'); el.textContent += m + '\n'; el.scrollTop
 const SESSIONS_KEY = 'pm5_sessions_v1';
 const PENDING_KEY  = 'pm5_pending_v1';
 const LEGACY_TOTALS_KEY = 'pm5_totals_v1'; // from the very first prototype
+const STREAM_HOST_KEY = 'pm5_stream_host_v1'; // this device only -- never hardcoded, never committed
+
+function loadStreamHost() {
+  try { return localStorage.getItem(STREAM_HOST_KEY) || ''; }
+  catch (e) { return ''; }
+}
+function saveStreamHost(host) {
+  try { localStorage.setItem(STREAM_HOST_KEY, host); }
+  catch (e) { log('stream host save failed: ' + e.message); }
+}
 
 function loadSessions() {
   try {
@@ -535,6 +565,8 @@ function updateMapPosition(totalMeters) {
 
   $('routeProgress').textContent = `${totalMeters.toFixed(0)} / ${routeLen.toFixed(0)} m`;
   $('routePercent').textContent = routeLen > 0 ? (totalMeters / routeLen * 100).toFixed(1) + '%' : '--';
+
+  sendDistanceToUnreal(totalMeters);
 }
 
 /* =========================================================================
@@ -579,6 +611,66 @@ function renderProjection(totalMeters) {
   if (remaining <= 0) { el.textContent = 'Past mapped route end'; return; }
   const etaSeconds = (remaining / perDay) * 86400;
   el.textContent = fmtDHM(etaSeconds) + '  (d:h:m)';
+}
+
+/* =========================================================================
+   3D VIEW — Pixel Streaming from the Unreal boat scene. The PC's address
+   lives only in STREAM_HOST_KEY (localStorage, this device only); it is
+   never written into this file, since the file is public.
+   ========================================================================= */
+let pixelStreaming = null;
+let pixelStreamingModulePromise = null;
+
+function loadPixelStreamingModule() {
+  if (!pixelStreamingModulePromise) {
+    pixelStreamingModulePromise = import('https://cdn.jsdelivr.net/npm/@epicgames-ps/lib-pixelstreamingfrontend-ue5.6@0.3.0/+esm');
+  }
+  return pixelStreamingModulePromise;
+}
+
+async function ensurePixelStreaming() {
+  if (pixelStreaming) return pixelStreaming;
+  const host = loadStreamHost();
+  if (!host) { log('3D view: no PC address saved yet -- set it in Settings.'); return null; }
+
+  const { Config, PixelStreaming, TextParameters } = await loadPixelStreamingModule();
+  const config = new Config({
+    initialSettings: { OfferToReceive: true, TimeoutIfIdle: true, AutoConnect: false }
+  });
+  config.setTextSetting(TextParameters.SignallingServerUrl, `ws://${host}`);
+
+  pixelStreaming = new PixelStreaming(config);
+  // NOTE: videoElementParent is the one property name worth checking in
+  // devtools (console.log(pixelStreaming)) if the video doesn't appear.
+  $('streamView').appendChild(pixelStreaming.videoElementParent);
+  log('3D view: connecting to ' + host);
+  return pixelStreaming;
+}
+
+let showingStream = false;
+async function toggleStreamView() {
+  if (!showingStream && !loadStreamHost()) {
+    log('3D view: set a PC address in Settings first.');
+    alert("Set the PC's address in Settings first (gear icon -> 3D view -- PC address).");
+    return;
+  }
+
+  showingStream = !showingStream;
+  $('map').style.display = showingStream ? 'none' : 'block';
+  $('streamView').style.display = showingStream ? 'block' : 'none';
+  $('streamToggleBtn').textContent = showingStream ? 'Show Map' : 'Show 3D View';
+
+  if (showingStream) {
+    const stream = await ensurePixelStreaming();
+    if (stream) stream.connect();
+  }
+}
+$('streamToggleBtn').addEventListener('click', toggleStreamView);
+
+// Called every time total distance changes -- see updateMapPosition above.
+// Safe to call before the stream connects; it's a no-op until then.
+function sendDistanceToUnreal(distanceMeters) {
+  if (pixelStreaming) pixelStreaming.emitUIInteraction({ distance: distanceMeters });
 }
 
 /* =========================================================================
@@ -724,6 +816,14 @@ $('exportBtn').addEventListener('click', () => {
   a.click();
   URL.revokeObjectURL(url);
   renderTotals();
+});
+
+$('streamHostInput').value = loadStreamHost();
+$('saveStreamHostBtn').addEventListener('click', () => {
+  const host = $('streamHostInput').value.trim();
+  saveStreamHost(host);
+  pixelStreaming = null; // force a fresh connection using the new address next time
+  log('3D view address saved: ' + (host || '(cleared)'));
 });
 
 $('importBtn').addEventListener('click', () => $('importFile').click());
