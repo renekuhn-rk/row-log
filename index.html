@@ -58,6 +58,22 @@
     background:#2f7de1; color:#fff; font-weight:600;
   }
   #connectBtn:disabled { background:#444; color:#999; }
+  #topRow { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 6px; }
+  #streamToggleBtn {
+    font-size:14px; font-weight:700; padding:9px 14px; border:0; border-radius:10px;
+    background:rgba(255,255,255,0.08); color:#eee; min-width:52px;
+  }
+  #streamToggleBtn.active { background:rgba(47,125,225,0.25); color:#bcd8ff; }
+  #fullscreenBtn {
+    position:absolute; top:calc(16px + env(safe-area-inset-top,0px)); right:calc(16px + env(safe-area-inset-right,0px));
+    z-index:1000; width:46px; height:46px; border-radius:50%; border:0;
+    background:#2a2a2e; color:#cde; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 2px 12px rgba(0,0,0,0.5);
+  }
+  #fullscreenBtn svg { width:20px; height:20px; }
+  #fullscreenBtn .fs-exit { display:none; }
+  #fullscreenBtn.is-full .fs-enter { display:none; }
+  #fullscreenBtn.is-full .fs-exit { display:block; }
 
   .row { display:flex; justify-content:space-between; align-items:baseline; margin:6px 0; }
   .big { font-size:34px; font-weight:700; color:#5fd3a0; }
@@ -172,18 +188,19 @@
 
 <button id="panelToggle">&#8249;</button>
 <button id="recenterBtn" title="Recenter on my position">&#8982;</button>
+<button id="fullscreenBtn" aria-label="Enter fullscreen" title="Fullscreen">
+  <svg class="fs-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+  <svg class="fs-exit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>
+</button>
 
 <div id="panel">
  <div id="panelContent">
 
   <div id="mainView">
-    <div class="row">
+    <div id="topRow">
       <div id="statusPill">Disconnected</div>
+      <button id="streamToggleBtn" aria-label="Switch to 3D view">3D</button>
       <button id="connectBtn">Connect</button>
-    </div>
-
-    <div class="btnrow">
-      <button id="streamToggleBtn" class="accent">Show 3D View</button>
     </div>
 
     <div class="row" style="margin-top:14px;">
@@ -208,15 +225,6 @@
         <div class="lbl">Live</div>
         <div id="livePace">-- /500m</div>
         <div id="liveSpm">-- spm</div>
-      </div>
-      <div class="card">
-        <div class="lbl">Route progress</div>
-        <div id="routeProgress">0 / 0 m</div>
-        <div id="routePercent">0%</div>
-      </div>
-      <div class="card">
-        <div class="lbl">Projected finish</div>
-        <div id="projEta">--</div>
       </div>
     </div>
 
@@ -246,7 +254,6 @@
       <button id="exportBtn">Export JSON</button>
       <button id="importBtn">Import JSON</button>
       <button id="resetBtn" class="danger">Reset all data</button>
-      <button id="fullscreenBtn" class="accent">Fullscreen</button>
       <button id="installBtn" class="accent" style="display:none;">Install app</button>
     </div>
 
@@ -279,6 +286,19 @@
   <div id="statsHeader">
     <button id="statsBack">&#8592;</button>
     <h2>Stats</h2>
+  </div>
+
+  <div class="card recordsGrid">
+    <div class="recordCard">
+      <div class="lbl">Route progress</div>
+      <div class="big" id="routePercent">0%</div>
+      <div class="sub" id="routeProgress">0 / 0 m</div>
+    </div>
+    <div class="recordCard">
+      <div class="lbl">Projected finish</div>
+      <div class="big" id="projEta">--</div>
+      <div class="sub" id="projEtaSub"></div>
+    </div>
   </div>
 
   <div class="card">
@@ -772,6 +792,7 @@ function fmtDHM(totalSeconds) {
 
 function renderProjection(totalMeters) {
   const el = $('projEta');
+  $('projEtaSub').textContent = '';
   const starts = sessions.map(s => s.startTime).filter(Boolean);
   if (!starts.length || !routeLen) { el.textContent = 'Not enough data yet'; return; }
   const days = (Date.now() - Math.min(...starts)) / 86400000;
@@ -780,7 +801,8 @@ function renderProjection(totalMeters) {
   const remaining = routeLen - totalMeters;
   if (remaining <= 0) { el.textContent = 'Past mapped route end'; return; }
   const etaSeconds = (remaining / perDay) * 86400;
-  el.textContent = fmtDHM(etaSeconds) + '  (d:h:m)';
+  el.textContent = fmtDHM(etaSeconds);
+  $('projEtaSub').textContent = 'days:hours:minutes at your average daily distance';
 }
 
 /* =========================================================================
@@ -837,7 +859,9 @@ async function toggleStreamView() {
   showingStream = !showingStream;
   $('map').style.display = showingStream ? 'none' : 'block';
   $('streamView').style.display = showingStream ? 'block' : 'none';
-  $('streamToggleBtn').textContent = showingStream ? 'Show Map' : 'Show 3D View';
+  $('streamToggleBtn').textContent = showingStream ? '2D' : '3D';
+  $('streamToggleBtn').classList.toggle('active', showingStream);
+  $('streamToggleBtn').setAttribute('aria-label', showingStream ? 'Switch to 2D map' : 'Switch to 3D view');
 
   if (showingStream) {
     const stream = await ensurePixelStreaming();
@@ -1097,6 +1121,15 @@ $('fullscreenBtn').addEventListener('click', () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else document.documentElement.requestFullscreen().catch(e => log('Fullscreen failed: ' + e.message));
 });
+// Keep the icon in sync however fullscreen is entered or left (button, back gesture, app switch).
+function syncFullscreenBtn() {
+  const full = !!document.fullscreenElement;
+  $('fullscreenBtn').classList.toggle('is-full', full);
+  $('fullscreenBtn').setAttribute('aria-label', full ? 'Exit fullscreen' : 'Enter fullscreen');
+}
+document.addEventListener('fullscreenchange', syncFullscreenBtn);
+// Browsers without the Fullscreen API: the button would do nothing, so hide it.
+if (!document.fullscreenEnabled) $('fullscreenBtn').style.display = 'none';
 
 let deferredInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', (e) => {
