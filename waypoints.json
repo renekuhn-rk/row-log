@@ -1,3 +1,74 @@
 [
-  { "name": "Frankfurt am Main (start)", "distanceM": 0 }
+  {
+    "name": "Frankfurt",
+    "distanceM": 213,
+    "tier": 1,
+    "source": "node/27418664"
+  },
+  {
+    "name": "Gutleutviertel",
+    "distanceM": 1906,
+    "tier": 3,
+    "source": "node/2274148302"
+  },
+  {
+    "name": "Niederrad",
+    "distanceM": 3884,
+    "tier": 3,
+    "source": "node/1685622039"
+  },
+  {
+    "name": "Griesheim",
+    "distanceM": 6230,
+    "tier": 3,
+    "source": "node/1685622036"
+  },
+  {
+    "name": "Schwanheim",
+    "distanceM": 7912,
+    "tier": 3,
+    "source": "node/2274148307"
+  },
+  {
+    "name": "Nied",
+    "distanceM": 9464,
+    "tier": 3,
+    "source": "node/446011944"
+  },
+  {
+    "name": "Höchst",
+    "distanceM": 10880,
+    "tier": 3,
+    "source": "node/27580601"
+  },
+  {
+    "name": "Sindlingen",
+    "distanceM": 13674,
+    "tier": 3,
+    "source": "node/1685622046"
+  },
+  {
+    "name": "Kelsterbach",
+    "distanceM": 15230,
+    "tier": 2,
+    "source": "node/30131511"
+  },
+  {
+    "name": "Okriftel",
+    "distanceM": 17925,
+    "tier": 3,
+    "source": "node/120067182"
+  },
+  {
+    "name": "Eddersheim",
+    "distanceM": 20225,
+    "tier": 3,
+    "source": "node/122087013"
+  },
+  {
+    "name": "Raunheim",
+    "distanceM": 22848,
+    "tier": 2,
+    "source": "node/35828707"
+  }
 ]

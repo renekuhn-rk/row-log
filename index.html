@@ -28,7 +28,7 @@
   }
   #panel.collapsed { transform: translateX(-100%); }
   #panelContent {
-    flex:1; overflow-y:auto; min-height:0;
+    flex:1; overflow-y:auto; min-height:0; display:flex; flex-direction:column;
     padding: calc(14px + env(safe-area-inset-top,0px)) 16px 8px calc(16px + env(safe-area-inset-left,0px));
   }
   #panelFooter {
@@ -66,6 +66,50 @@
   .card { background:rgba(255,255,255,0.05); border-radius:12px; padding:10px 12px; }
   .overflow-badge { background:#7a4a00; color:#ffd28a; padding:4px 10px; border-radius:8px; font-size:12px; display:inline-block; margin-top:4px; }
   .waypoint { font-size:14px; color:#bcd; margin-top:2px; }
+
+  /* ---- next stops (bottom of the panel) ---- */
+  #mainView { flex:1 0 auto; display:flex; flex-direction:column; }
+  #nextStops {
+    flex:1 0 auto; display:flex; flex-direction:column; gap:14px;
+    margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.08);
+  }
+  #nsCard { background:rgba(95,211,160,0.08); border-radius:12px; padding:12px 14px; display:flex; flex-direction:column; gap:8px; }
+  .ns-head { display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+  #nsName { font-size:22px; font-weight:700; color:#fff; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #nsKm { font-size:28px; font-weight:700; color:#5fd3a0; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  #nsKm .u { font-size:15px; font-weight:600; }
+  .ns-bar { position:relative; height:16px; }
+  .ns-track, #nsFill { position:absolute; left:0; top:5px; height:6px; border-radius:3px; }
+  .ns-track { right:0; background:#2a2a2e; }
+  #nsFill { width:0; background:#5fd3a0; }
+  #nsBoat {
+    position:absolute; top:0; left:0; margin-left:-8px; width:16px; height:16px; box-sizing:border-box;
+    border-radius:50%; background:#5fd3a0; border:2px solid #121214; box-shadow:0 0 10px 3px rgba(95,211,160,0.6);
+  }
+  .ns-foot { display:flex; justify-content:space-between; gap:8px; font-size:12px; color:#9aa4ae; }
+
+  #nsLine { position:relative; flex:1 0 150px; min-height:150px; }
+  .ns-seg { position:absolute; left:74px; width:4px; }
+  .ns-row { position:absolute; left:0; right:0; height:28px; display:flex; align-items:center; }
+  .ns-km { width:62px; white-space:nowrap; text-align:right; font-variant-numeric:tabular-nums; font-size:13px; font-weight:500; color:#9aa4ae; }
+  .ns-km .u { font-size:11px; font-weight:400; color:#8a8f96; }
+  .ns-dotwrap { width:28px; display:flex; justify-content:center; align-items:center; }
+  .ns-dot { box-sizing:border-box; border-radius:50%; background:#121214; border:2px solid #6f9fd6; width:8px; height:8px; }
+  .ns-dot.t2 { width:11px; height:11px; }
+  .ns-dot.t1 { width:15px; height:15px; background:#eef2f5; border-width:3px; }
+  .ns-name { padding-left:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:13px; color:#aab4be; }
+  .ns-name.t2 { font-size:15px; font-weight:600; color:#d4dbe1; }
+  .ns-name.t1 { font-size:18px; font-weight:700; color:#d4dbe1; }
+  .ns-row.next .ns-km { font-size:15px; font-weight:700; color:#5fd3a0; }
+  .ns-row.next .ns-dot { border-color:#5fd3a0; }
+  .ns-row.next .ns-name { color:#fff; }
+  .ns-row.passed .ns-km, .ns-row.passed .ns-name { color:#8a8f96; }
+  .ns-passed-dot { width:8px; height:8px; border-radius:50%; background:#5fd3a0; }
+  .ns-you-dot {
+    width:16px; height:16px; box-sizing:border-box; border-radius:50%; background:#5fd3a0;
+    border:2px solid #121214; box-shadow:0 0 10px 3px rgba(95,211,160,0.7);
+  }
+  .ns-you { padding-left:6px; font-size:12px; font-weight:700; color:#5fd3a0; text-transform:uppercase; letter-spacing:0.5px; }
 
   .btnrow { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
   .btnrow button {
@@ -153,7 +197,6 @@
       </div>
     </div>
     <div id="overflowWrap"></div>
-    <div class="waypoint" id="waypointText"></div>
 
     <div class="grid2">
       <div class="card">
@@ -176,6 +219,23 @@
         <div id="projEta">--</div>
       </div>
     </div>
+
+    <section id="nextStops" aria-label="Next stops">
+      <div id="nsCard">
+        <div class="lbl">Next stop</div>
+        <div class="ns-head">
+          <div id="nsName">--</div>
+          <div id="nsKm"></div>
+        </div>
+        <div class="ns-bar" id="nsBar">
+          <div class="ns-track"></div>
+          <div id="nsFill"></div>
+          <div id="nsBoat"></div>
+        </div>
+        <div class="ns-foot"><span id="nsFrom"></span><span id="nsEta"></span></div>
+      </div>
+      <div id="nsLine"></div>
+    </section>
   </div>
 
   <div id="settingsView" style="display:none;">
@@ -457,8 +517,14 @@ async function loadRoute() {
 async function loadWaypoints() {
   try {
     const res = await fetch('waypoints.json', { cache: 'no-store' });
-    waypoints = await res.json();
+    const raw = await res.json();
+    // tier: 1 = city, 2 = town, 3 = village/small place. Entries without a
+    // tier (e.g. a hand-made file) simply show at the small size.
+    waypoints = (Array.isArray(raw) ? raw : [])
+      .filter(w => w && typeof w.name === 'string' && isFinite(w.distanceM))
+      .map(w => ({ ...w, tier: [1,2,3].includes(w.tier) ? w.tier : 3 }));
     waypoints.sort((a,b) => a.distanceM - b.distanceM);
+    log(`Waypoints loaded: ${waypoints.length}`);
   } catch (e) { log('waypoints load failed: ' + e.message); }
 }
 
@@ -482,6 +548,111 @@ function nearestWaypointBehind(d) {
   for (const w of waypoints) { if (w.distanceM <= d) best = w; else break; }
   return best;
 }
+
+/* =========================================================================
+   NEXT STOPS — bus-style display at the bottom of the panel: a card for the
+   next place, and a line underneath running bottom-up (the last passed place
+   at the bottom, you, then the coming places). Spacing between dots follows
+   the real distances, compressed so near places don't crowd and far ones
+   don't fall off the top.
+   ========================================================================= */
+let livePaceSec = null;      // current pace in s/500m, from the PM5 while rowing
+let lastNsTotal = 0;
+
+const escapeHtml = t => String(t).replace(/[&<>"']/g, c =>
+  ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const fmtKm = km => (Math.abs(km) < 10 ? Math.abs(km).toFixed(1) : String(Math.round(Math.abs(km))));
+
+function fmtEtaMinutes(sec) {
+  const min = Math.max(1, Math.round(sec / 60));
+  if (min < 60) return `≈ ${min} min at current pace`;
+  return `≈ ${Math.floor(min / 60)} h ${String(min % 60).padStart(2,'0')} min at current pace`;
+}
+
+function renderNextStops(totalMeters) {
+  lastNsTotal = totalMeters;
+  const passed = nearestWaypointBehind(totalMeters);
+  const upcoming = waypoints.filter(w => w.distanceM > totalMeters);
+  const next = upcoming[0];
+
+  // ---- card ----
+  if (!waypoints.length) {
+    $('nsName').textContent = 'No places listed';
+    $('nsKm').innerHTML = '';
+    $('nsBar').style.visibility = 'hidden';
+    $('nsFrom').textContent = 'Add places to waypoints.json to see them here';
+    $('nsEta').textContent = '';
+  } else if (!next) {
+    $('nsName').textContent = 'No more places';
+    $('nsKm').innerHTML = '';
+    $('nsBar').style.visibility = 'hidden';
+    $('nsFrom').textContent = passed ? `last: ${passed.name}` : '';
+    $('nsEta').textContent = '';
+  } else {
+    const remaining = next.distanceM - totalMeters;
+    const fromD = passed ? passed.distanceM : 0;
+    const pct = Math.max(0, Math.min(1, (totalMeters - fromD) / Math.max(1, next.distanceM - fromD))) * 100;
+    $('nsName').textContent = next.name;
+    $('nsKm').innerHTML = `${fmtKm(remaining / 1000)} <span class="u">km</span>`;
+    $('nsBar').style.visibility = 'visible';
+    $('nsFill').style.width = pct + '%';
+    $('nsBoat').style.left = pct + '%';
+    $('nsFrom').textContent = passed ? `from ${passed.name}` : 'from the start';
+    $('nsEta').textContent = (pending && livePaceSec > 0) ? fmtEtaMinutes(remaining / 500 * livePaceSec) : '';
+  }
+
+  // ---- line ----
+  const box = $('nsLine');
+  const H = box.clientHeight;
+  if (!H) return; // panel view hidden (settings open); redrawn when shown again
+  const GAP = 28, TOP = 14;
+  const passedY = H - 24;
+  const youY = passed ? passedY - 38 : H - 24;
+  const span = youY - TOP;
+  const cap = Math.max(2, Math.min(6, Math.floor(span / GAP)));
+  const list = upcoming.slice(0, cap);
+  const kms = list.map(w => (w.distanceM - totalMeters) / 1000);
+  const raw = kms.map(k => Math.pow(Math.max(k, 0.01), 0.55));
+  // scale against at least ~15 km, so a lone nearby place isn't stretched to the top
+  const last = Math.max(raw[raw.length - 1] || 0, Math.pow(15, 0.55));
+  const offs = raw.map(v => v / last * span);
+  for (let i = 0; i < offs.length; i++) {           // keep labels apart...
+    const prev = i === 0 ? 0 : offs[i - 1];
+    if (offs[i] - prev < GAP) offs[i] = prev + GAP;
+  }
+  for (let i = offs.length - 1; i >= 0; i--) {      // ...but never past the top
+    const lim = i === offs.length - 1 ? span : offs[i + 1] - GAP;
+    if (offs[i] > lim) offs[i] = lim;
+  }
+  const ys = offs.map(o => youY - o);
+  const topY = ys.length ? ys[ys.length - 1] : youY;
+
+  const seg = (top, h, bg) => `<div class="ns-seg" style="top:${top}px;height:${Math.max(0,h)}px;background:${bg}"></div>`;
+  const row = (y, cls, kmHtml, dotHtml, nameHtml) =>
+    `<div class="ns-row ${cls}" style="top:${y - 14}px"><div class="ns-km">${kmHtml}</div><div class="ns-dotwrap">${dotHtml}</div>${nameHtml}</div>`;
+
+  let html = '';
+  if (list.length) {
+    html += seg(Math.max(0, topY - 22), Math.min(22, topY), 'linear-gradient(rgba(58,110,168,0),#3a6ea8)');
+    html += seg(topY, youY - topY, '#3a6ea8');
+  }
+  if (passed) {
+    html += seg(youY, passedY - youY, '#5fd3a0');
+    html += seg(passedY, H - passedY, 'linear-gradient(#5fd3a0,rgba(95,211,160,0))');
+    const back = (totalMeters - passed.distanceM) / 1000;
+    html += row(passedY, 'passed', `${back >= 0.05 ? '−' : ''}${fmtKm(back)} <span class="u">km</span>`,
+                '<div class="ns-passed-dot"></div>', `<div class="ns-name">${escapeHtml(passed.name)}</div>`);
+  } else if (totalMeters > 0) {
+    html += seg(youY, H - youY, 'linear-gradient(#5fd3a0,rgba(95,211,160,0))');
+  }
+  list.forEach((w, i) => {
+    html += row(ys[i], i === 0 ? 'next' : '', `${fmtKm(kms[i])} <span class="u">km</span>`,
+                `<div class="ns-dot t${w.tier}"></div>`, `<div class="ns-name t${w.tier}">${escapeHtml(w.name)}</div>`);
+  });
+  html += row(youY, 'you', '', '<div class="ns-you-dot"></div>', '<div class="ns-you">You</div>');
+  box.innerHTML = html;
+}
+window.addEventListener('resize', () => renderNextStops(lastNsTotal));
 
 /* =========================================================================
    MAP
@@ -560,8 +731,7 @@ function updateMapPosition(totalMeters) {
     overWrap.innerHTML = '';
   }
 
-  const wp = nearestWaypointBehind(totalMeters);
-  $('waypointText').textContent = wp ? `Last passed: ${wp.name}` : '';
+  renderNextStops(totalMeters);
 
   $('routeProgress').textContent = `${totalMeters.toFixed(0)} / ${routeLen.toFixed(0)} m`;
   $('routePercent').textContent = routeLen > 0 ? (totalMeters / routeLen * 100).toFixed(1) + '%' : '--';
@@ -623,7 +793,10 @@ let pixelStreamingModulePromise = null;
 
 function loadPixelStreamingModule() {
   if (!pixelStreamingModulePromise) {
-    pixelStreamingModulePromise = import('https://cdn.jsdelivr.net/npm/@epicgames-ps/lib-pixelstreamingfrontend-ue5.6@0.3.0/+esm');
+    // Self-contained bundle of @epicgames-ps/lib-pixelstreamingfrontend-ue5.6@0.3.0
+    // (MIT) with its dependencies baked in. Loaded from the repo rather than a
+    // CDN, because jsDelivr's automatic ESM conversion breaks one of its deps.
+    pixelStreamingModulePromise = import('./vendor/pixelstreaming-ue5.6.js');
   }
   return pixelStreamingModulePromise;
 }
@@ -635,7 +808,13 @@ async function ensurePixelStreaming() {
 
   const { Config, PixelStreaming, TextParameters } = await loadPixelStreamingModule();
   const config = new Config({
-    initialSettings: { OfferToReceive: true, TimeoutIfIdle: true, AutoConnect: false }
+    initialSettings: {
+      AutoConnect: false,     // we call connect() ourselves when the view opens
+      AutoPlayVideo: true,    // no play button exists in our UI, so it must autoplay
+      StartVideoMuted: true,  // muted autoplay is always allowed by browsers; there's no audio anyway
+      TimeoutIfIdle: false,   // AFK kick-out -- you never touch the stream while rowing
+      HoveringMouse: true     // don't grab/lock the mouse pointer when testing on the PC
+    }
   });
   config.setTextSetting(TextParameters.SignallingServerUrl, `ws://${host}`);
 
@@ -719,6 +898,7 @@ function onAdd1(e) {
   const strokeRate = dv.getUint8(5);
   const hr = dv.getUint8(6);
   const currentPace = u16(dv,7) / 100;  // seconds per 500m
+  livePaceSec = currentPace > 0 ? currentPace : null;
   const avgPace = u16(dv,9) / 100;      // seconds per 500m — this is the field session records need
   pending.strokeRate = strokeRate;
   pending.heartRate = hr === 255 ? null : hr;
@@ -749,6 +929,7 @@ async function connect() {
       $('statusPill').textContent = 'Disconnected';
       $('statusPill').classList.remove('on');
       $('connectBtn').disabled = false;
+      livePaceSec = null;
       finalizePending('Disconnected from PM5');
       releaseWakeLock();
       log('Disconnected');
@@ -868,9 +1049,10 @@ toggleEl.addEventListener('click', () => {
 window.addEventListener('resize', positionToggle);
 
 function showSettings(show) {
-  $('mainView').style.display = show ? 'none' : 'block';
+  $('mainView').style.display = show ? 'none' : '';       // '' = back to the stylesheet's flex layout
   $('settingsView').style.display = show ? 'block' : 'none';
-  $('panelFooter').style.display = show ? 'none' : 'block';
+  $('panelFooter').style.display = show ? 'none' : '';
+  if (!show) renderNextStops(lastNsTotal);                 // the line can't measure itself while hidden
 }
 $('settingsBtn').addEventListener('click', () => showSettings(true));
 $('backBtn').addEventListener('click', () => showSettings(false));
