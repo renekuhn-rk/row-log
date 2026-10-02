@@ -273,7 +273,7 @@
     <div class="card" style="margin-top:12px;">
       <div class="lbl">3D view — PC address</div>
       <div style="font-size:12px; color:#888; margin:4px 0 8px;">
-        Stored only on this device, never in the app's source. Find it on the streaming PC via <code>ipconfig</code> (Windows), under your Wi-Fi adapter's IPv4 address.
+        Stored only on this device, never in the app's source. Find it on the streaming PC via <code>ipconfig</code> (Windows), under your Wi-Fi adapter's IPv4 address. Add a port only if the signalling server's HTTPS port isn't 443, e.g. <code>192.168.2.104:8443</code>.
       </div>
       <input id="streamHostInput" type="text" placeholder="e.g. 192.168.1.50"
              style="width:100%; box-sizing:border-box; background:#1c1c1e; border:1px solid #333; color:#eee; padding:9px 10px; border-radius:8px; font-size:14px;">
@@ -867,13 +867,16 @@ async function ensurePixelStreaming() {
       HoveringMouse: true     // don't grab/lock the mouse pointer when testing on the PC
     }
   });
-  config.setTextSetting(TextParameters.SignallingServerUrl, `ws://${host}`);
+  // An https page (GitHub Pages) may only open secure websockets, so use wss://
+  // there. The host field may include a port, e.g. 192.168.2.104:8443.
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  config.setTextSetting(TextParameters.SignallingServerUrl, `${scheme}://${host}`);
 
   pixelStreaming = new PixelStreaming(config);
   // NOTE: videoElementParent is the one property name worth checking in
   // devtools (console.log(pixelStreaming)) if the video doesn't appear.
   $('streamView').appendChild(pixelStreaming.videoElementParent);
-  log('3D view: connecting to ' + host);
+  log(`3D view: connecting to ${location.protocol === 'https:' ? 'wss' : 'ws'}://${host}`);
   return pixelStreaming;
 }
 
