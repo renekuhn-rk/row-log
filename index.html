@@ -15,7 +15,34 @@
   #map .leaflet-control-attribution { background:rgba(0,0,0,0.5); color:#aaa; }
   #map .leaflet-control-attribution a { color:#8cf; }
 
-  #streamView { position:absolute; inset:0; background:#000; display:none; }
+  /* The stream fills only the area right of the side panel (left is set in
+     positionToggle), so the video is centered in what you can actually see. */
+  /* visibility (not display:none) keeps the area measurable while the map is shown,
+     so the stream resolution sent to Unreal is never 0x0 */
+  #streamView { position:absolute; inset:0; background:#000; visibility:hidden; transition: left 0.22s ease; }
+  #streamView.shown { visibility:visible; }
+  #psBadge {
+    position:absolute; z-index:3; top:calc(16px + env(safe-area-inset-top,0px)); left:16px;
+    display:flex; align-items:center; gap:7px; padding:6px 12px 6px 10px; border-radius:20px;
+    background:rgba(18,18,20,0.8); color:#eee; font-size:13px; font-weight:600; pointer-events:none;
+  }
+  #psBadge .dot { width:9px; height:9px; border-radius:50%; background:#888; }
+  #psBadge[data-state="live"] .dot { background:#5fd3a0; box-shadow:0 0 8px 2px rgba(95,211,160,0.7); }
+  #psBadge[data-state="connecting"] .dot, #psBadge[data-state="stalled"] .dot { background:#ffd28a; }
+  #psBadge[data-state="disconnected"] .dot { background:#ff6b6b; }
+  #psOverlay {
+    position:absolute; inset:0; z-index:2; background:#000; padding:24px; text-align:center;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+  }
+  #psOverlay[hidden] { display:none; }
+  #psOverlayTitle { font-size:18px; font-weight:700; color:#eee; }
+  #psOverlayDetail { font-size:13px; color:#9aa4ae; max-width:380px; line-height:1.45; }
+  #psReconnectBtn {
+    margin-top:6px; font-size:14px; padding:10px 18px; border:0; border-radius:10px;
+    background:#2f7de1; color:#fff; font-weight:600;
+  }
+  #psReconnectBtn[hidden] { display:none; }
+  #streamView #videoElementParent { position:absolute; inset:0; }
   #streamView video { width:100%; height:100%; object-fit:contain; }
 
   #panel {
@@ -184,7 +211,14 @@
 <body>
 
 <div id="map"></div>
-<div id="streamView"></div>
+<div id="streamView">
+  <div id="psBadge" data-state="idle" role="status" aria-live="polite"><span class="dot"></span><span id="psBadgeText">Not connected</span></div>
+  <div id="psOverlay">
+    <div id="psOverlayTitle">3D view not connected</div>
+    <div id="psOverlayDetail"></div>
+    <button id="psReconnectBtn" type="button">Reconnect</button>
+  </div>
+</div>
 
 <button id="panelToggle">&#8249;</button>
 <button id="recenterBtn" title="Recenter on my position">&#8982;</button>
@@ -864,7 +898,13 @@ async function ensurePixelStreaming() {
       AutoPlayVideo: true,    // no play button exists in our UI, so it must autoplay
       StartVideoMuted: true,  // muted autoplay is always allowed by browsers; there's no audio anyway
       TimeoutIfIdle: false,   // AFK kick-out -- you never touch the stream while rowing
-      HoveringMouse: true     // don't grab/lock the mouse pointer when testing on the PC
+      HoveringMouse: true,    // don't grab/lock the mouse pointer when testing on the PC
+      // Unreal renders at exactly the size of the visible stream area, so the
+      // picture fills it with no black bars, and re-renders when the panel moves.
+      MatchViewportRes: true,
+      // The area is measured in CSS pixels; the tablet has 2 screen pixels per CSS
+      // pixel. 1.5x is sharp without making the Wi-Fi stream needlessly heavy.
+      ViewportResScale: Math.min(window.devicePixelRatio || 1, 1.5)
     }
   });
   // An https page (GitHub Pages) may only open secure websockets, so use wss://
@@ -873,12 +913,73 @@ async function ensurePixelStreaming() {
   config.setTextSetting(TextParameters.SignallingServerUrl, `${scheme}://${host}`);
 
   pixelStreaming = new PixelStreaming(config);
-  // NOTE: videoElementParent is the one property name worth checking in
-  // devtools (console.log(pixelStreaming)) if the video doesn't appear.
+  psConnectCalled = false;
   $('streamView').appendChild(pixelStreaming.videoElementParent);
-  log(`3D view: connecting to ${location.protocol === 'https:' ? 'wss' : 'ws'}://${host}`);
+
+  const ps = pixelStreaming;
+  const pcHint = 'Check that Unreal and the signalling server are running on the PC.';
+  ps.addEventListener('webRtcConnecting', () => setPsState('connecting', `Connecting to ${host}…`));
+  ps.addEventListener('webRtcConnected', () => setPsState('connecting', 'Connected, waiting for the picture…'));
+  ps.addEventListener('streamReconnect', () => setPsState('connecting', 'Reconnecting…'));
+  ps.addEventListener('videoInitialized', () => { psFramesSeenAt = performance.now(); setPsState('live'); });
+  ps.addEventListener('webRtcFailed', () => setPsState('disconnected', `The video connection failed. ${pcHint}`));
+  ps.addEventListener('webRtcDisconnected', (e) => {
+    const why = (e && e.data && e.data.eventString) ? e.data.eventString.trim() + ' ' : '';
+    setPsState('disconnected', why + pcHint);
+  });
+  // Unreal may have been restarted and forgotten where the boat is: tell it right away.
+  ps.addEventListener('dataChannelOpen', () => sendDistanceToUnreal(lastNsTotal));
   return pixelStreaming;
 }
+
+/* ---- live / not-live indicator --------------------------------------------
+   States: idle -> connecting -> live; live -> stalled (frames stop arriving) or
+   disconnected. Whenever it isn't live, an opaque overlay covers the video so a
+   frozen last frame can never pass for a live picture. */
+let psState = 'idle';
+let psConnectCalled = false;
+let psFramesSeenAt = 0, psLastFrameCount = -1;
+let lastPsLogLine = '';
+
+function setPsState(state, detail = '') {
+  psState = state;
+  const badge = { idle: 'Not connected', connecting: 'Connecting…', live: 'Live', stalled: 'No picture', disconnected: 'Disconnected' };
+  const title = { idle: '3D view not connected', connecting: 'Connecting to the 3D view…', stalled: 'No picture from Unreal', disconnected: '3D view disconnected' };
+  $('psBadge').dataset.state = state;
+  $('psBadgeText').textContent = badge[state];
+  $('psOverlay').hidden = state === 'live';
+  $('psOverlayTitle').textContent = title[state] || '';
+  $('psOverlayDetail').textContent = detail;
+  $('psReconnectBtn').hidden = state === 'connecting' || state === 'live';
+  const line = `3D view: ${badge[state]}${detail ? ' – ' + detail : ''}`;
+  if (line !== lastPsLogLine) { log(line); lastPsLogLine = line; }   // the library repeats some events
+}
+
+function psConnectOrReconnect() {
+  if (!pixelStreaming) return;
+  setPsState('connecting', `Connecting to ${loadStreamHost()}…`);
+  if (!psConnectCalled) { psConnectCalled = true; pixelStreaming.connect(); }
+  else pixelStreaming.reconnect();   // closes a half-dead connection first if needed
+}
+$('psReconnectBtn').addEventListener('click', psConnectOrReconnect);
+
+// Frame watchdog: counts decoded video frames once a second. If Unreal stops
+// sending pictures without a clean disconnect, the badge says so within ~4 s.
+setInterval(() => {
+  if (!pixelStreaming || !showingStream) return;
+  const v = $('streamView').querySelector('video');
+  if (!v) return;
+  const q = v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality() : null;
+  const count = q ? q.totalVideoFrames : Math.floor(v.currentTime * 30);
+  const now = performance.now();
+  if (count !== psLastFrameCount) {
+    psLastFrameCount = count;
+    psFramesSeenAt = now;
+    if (psState === 'stalled') setPsState('live');
+  } else if (psState === 'live' && now - psFramesSeenAt > 4000) {
+    setPsState('stalled', 'Unreal stopped sending pictures. Is the game still running on the PC?');
+  }
+}, 1000);
 
 let showingStream = false;
 async function toggleStreamView() {
@@ -890,14 +991,16 @@ async function toggleStreamView() {
 
   showingStream = !showingStream;
   $('map').style.display = showingStream ? 'none' : 'block';
-  $('streamView').style.display = showingStream ? 'block' : 'none';
+  $('streamView').classList.toggle('shown', showingStream);
+  $('recenterBtn').style.display = showingStream ? 'none' : '';   // map-only control
   $('streamToggleBtn').textContent = showingStream ? '2D' : '3D';
   $('streamToggleBtn').classList.toggle('active', showingStream);
   $('streamToggleBtn').setAttribute('aria-label', showingStream ? 'Switch to 2D map' : 'Switch to 3D view');
 
   if (showingStream) {
+    psFramesSeenAt = performance.now();               // don't call it stalled while it was hidden
     const stream = await ensurePixelStreaming();
-    if (stream) stream.connect();
+    if (stream && (psState === 'idle' || psState === 'disconnected')) psConnectOrReconnect();
   }
 }
 $('streamToggleBtn').addEventListener('click', toggleStreamView);
@@ -1067,7 +1170,12 @@ $('streamHostInput').value = loadStreamHost();
 $('saveStreamHostBtn').addEventListener('click', () => {
   const host = $('streamHostInput').value.trim();
   saveStreamHost(host);
-  pixelStreaming = null; // force a fresh connection using the new address next time
+  if (pixelStreaming) {               // close the old connection and remove its video
+    try { pixelStreaming.disconnect(); } catch (e) {}
+    pixelStreaming.videoElementParent.remove();
+  }
+  pixelStreaming = null;              // a fresh connection with the new address next time
+  setPsState('idle');
   log('3D view address saved: ' + (host || '(cleared)'));
 });
 
@@ -1099,13 +1207,18 @@ $('importFile').addEventListener('change', async (e) => {
    ========================================================================= */
 const panelEl = $('panel'), toggleEl = $('panelToggle');
 function positionToggle() {
-  toggleEl.style.left = panelEl.classList.contains('collapsed') ? '0px' : panelEl.offsetWidth + 'px';
+  const edge = panelEl.classList.contains('collapsed') ? '0px' : panelEl.offsetWidth + 'px';
+  toggleEl.style.left = edge;
+  $('streamView').style.left = edge;   // slides with the panel (same 0.22s transition)
 }
 toggleEl.addEventListener('click', () => {
   panelEl.classList.toggle('collapsed');
   toggleEl.innerHTML = panelEl.classList.contains('collapsed') ? '&#8250;' : '&#8249;';
   positionToggle();
   setTimeout(() => {
+    // The stream library only re-measures on window resize; the panel moving
+    // isn't one, so nudge it, and Unreal re-renders at the new size.
+    window.dispatchEvent(new Event('resize'));
     map.invalidateSize();
     if (followMode && lastKnownPoint) map.setView(computeFollowCenter(lastKnownPoint), map.getZoom(), { animate: true });
   }, 230); // after the CSS transition
