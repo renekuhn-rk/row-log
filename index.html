@@ -15,6 +15,36 @@
   #map .leaflet-control-attribution { background:rgba(0,0,0,0.5); color:#aaa; }
   #map .leaflet-control-attribution a { color:#8cf; }
 
+  /* The stream fills only the area right of the side panel (left is set in
+     positionToggle), so the video is centered in what you can actually see. */
+  /* visibility (not display:none) keeps the area measurable while the map is shown,
+     so the stream resolution sent to Unreal is never 0x0 */
+  #streamView { position:absolute; inset:0; background:#000; visibility:hidden; transition: left 0.22s ease; }
+  #streamView.shown { visibility:visible; }
+  #psBadge {
+    position:absolute; z-index:3; top:calc(16px + env(safe-area-inset-top,0px)); left:16px;
+    display:flex; align-items:center; gap:7px; padding:6px 12px 6px 10px; border-radius:20px;
+    background:rgba(18,18,20,0.8); color:#eee; font-size:13px; font-weight:600; pointer-events:none;
+  }
+  #psBadge .dot { width:9px; height:9px; border-radius:50%; background:#888; }
+  #psBadge[data-state="live"] .dot { background:#5fd3a0; box-shadow:0 0 8px 2px rgba(95,211,160,0.7); }
+  #psBadge[data-state="connecting"] .dot, #psBadge[data-state="stalled"] .dot { background:#ffd28a; }
+  #psBadge[data-state="disconnected"] .dot { background:#ff6b6b; }
+  #psOverlay {
+    position:absolute; inset:0; z-index:2; background:#000; padding:24px; text-align:center;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+  }
+  #psOverlay[hidden] { display:none; }
+  #psOverlayTitle { font-size:18px; font-weight:700; color:#eee; }
+  #psOverlayDetail { font-size:13px; color:#9aa4ae; max-width:380px; line-height:1.45; }
+  #psReconnectBtn {
+    margin-top:6px; font-size:14px; padding:10px 18px; border:0; border-radius:10px;
+    background:#2f7de1; color:#fff; font-weight:600;
+  }
+  #psReconnectBtn[hidden] { display:none; }
+  #streamView #videoElementParent { position:absolute; inset:0; }
+  #streamView video { width:100%; height:100%; object-fit:contain; }
+
   #panel {
     position:absolute; top:0; left:0; bottom:0; z-index:1000;
     width:320px; max-width:86vw;
@@ -25,7 +55,7 @@
   }
   #panel.collapsed { transform: translateX(-100%); }
   #panelContent {
-    flex:1; overflow-y:auto; min-height:0;
+    flex:1; overflow-y:auto; min-height:0; display:flex; flex-direction:column;
     padding: calc(14px + env(safe-area-inset-top,0px)) 16px 8px calc(16px + env(safe-area-inset-left,0px));
   }
   #panelFooter {
@@ -55,6 +85,22 @@
     background:#2f7de1; color:#fff; font-weight:600;
   }
   #connectBtn:disabled { background:#444; color:#999; }
+  #topRow { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 6px; }
+  #streamToggleBtn {
+    font-size:14px; font-weight:700; padding:9px 14px; border:0; border-radius:10px;
+    background:rgba(255,255,255,0.08); color:#eee; min-width:52px;
+  }
+  #streamToggleBtn.active { background:rgba(47,125,225,0.25); color:#bcd8ff; }
+  #fullscreenBtn {
+    position:absolute; top:calc(16px + env(safe-area-inset-top,0px)); right:calc(16px + env(safe-area-inset-right,0px));
+    z-index:1000; width:46px; height:46px; border-radius:50%; border:0;
+    background:#2a2a2e; color:#cde; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 2px 12px rgba(0,0,0,0.5);
+  }
+  #fullscreenBtn svg { width:20px; height:20px; }
+  #fullscreenBtn .fs-exit { display:none; }
+  #fullscreenBtn.is-full .fs-enter { display:none; }
+  #fullscreenBtn.is-full .fs-exit { display:block; }
 
   .row { display:flex; justify-content:space-between; align-items:baseline; margin:6px 0; }
   .big { font-size:34px; font-weight:700; color:#5fd3a0; }
@@ -63,6 +109,50 @@
   .card { background:rgba(255,255,255,0.05); border-radius:12px; padding:10px 12px; }
   .overflow-badge { background:#7a4a00; color:#ffd28a; padding:4px 10px; border-radius:8px; font-size:12px; display:inline-block; margin-top:4px; }
   .waypoint { font-size:14px; color:#bcd; margin-top:2px; }
+
+  /* ---- next stops (bottom of the panel) ---- */
+  #mainView { flex:1 0 auto; display:flex; flex-direction:column; }
+  #nextStops {
+    flex:1 0 auto; display:flex; flex-direction:column; gap:14px;
+    margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.08);
+  }
+  #nsCard { background:rgba(95,211,160,0.08); border-radius:12px; padding:12px 14px; display:flex; flex-direction:column; gap:8px; }
+  .ns-head { display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+  #nsName { font-size:22px; font-weight:700; color:#fff; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #nsKm { font-size:28px; font-weight:700; color:#5fd3a0; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  #nsKm .u { font-size:15px; font-weight:600; }
+  .ns-bar { position:relative; height:16px; }
+  .ns-track, #nsFill { position:absolute; left:0; top:5px; height:6px; border-radius:3px; }
+  .ns-track { right:0; background:#2a2a2e; }
+  #nsFill { width:0; background:#5fd3a0; }
+  #nsBoat {
+    position:absolute; top:0; left:0; margin-left:-8px; width:16px; height:16px; box-sizing:border-box;
+    border-radius:50%; background:#5fd3a0; border:2px solid #121214; box-shadow:0 0 10px 3px rgba(95,211,160,0.6);
+  }
+  .ns-foot { display:flex; justify-content:space-between; gap:8px; font-size:12px; color:#9aa4ae; }
+
+  #nsLine { position:relative; flex:1 0 150px; min-height:150px; }
+  .ns-seg { position:absolute; left:74px; width:4px; }
+  .ns-row { position:absolute; left:0; right:0; height:28px; display:flex; align-items:center; }
+  .ns-km { width:62px; white-space:nowrap; text-align:right; font-variant-numeric:tabular-nums; font-size:13px; font-weight:500; color:#9aa4ae; }
+  .ns-km .u { font-size:11px; font-weight:400; color:#8a8f96; }
+  .ns-dotwrap { width:28px; display:flex; justify-content:center; align-items:center; }
+  .ns-dot { box-sizing:border-box; border-radius:50%; background:#121214; border:2px solid #6f9fd6; width:8px; height:8px; }
+  .ns-dot.t2 { width:11px; height:11px; }
+  .ns-dot.t1 { width:15px; height:15px; background:#eef2f5; border-width:3px; }
+  .ns-name { padding-left:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:13px; color:#aab4be; }
+  .ns-name.t2 { font-size:15px; font-weight:600; color:#d4dbe1; }
+  .ns-name.t1 { font-size:18px; font-weight:700; color:#d4dbe1; }
+  .ns-row.next .ns-km { font-size:15px; font-weight:700; color:#5fd3a0; }
+  .ns-row.next .ns-dot { border-color:#5fd3a0; }
+  .ns-row.next .ns-name { color:#fff; }
+  .ns-row.passed .ns-km, .ns-row.passed .ns-name { color:#8a8f96; }
+  .ns-passed-dot { width:8px; height:8px; border-radius:50%; background:#5fd3a0; }
+  .ns-you-dot {
+    width:16px; height:16px; box-sizing:border-box; border-radius:50%; background:#5fd3a0;
+    border:2px solid #121214; box-shadow:0 0 10px 3px rgba(95,211,160,0.7);
+  }
+  .ns-you { padding-left:6px; font-size:12px; font-weight:700; color:#5fd3a0; text-transform:uppercase; letter-spacing:0.5px; }
 
   .btnrow { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
   .btnrow button {
@@ -121,16 +211,29 @@
 <body>
 
 <div id="map"></div>
+<div id="streamView">
+  <div id="psBadge" data-state="idle" role="status" aria-live="polite"><span class="dot"></span><span id="psBadgeText">Not connected</span></div>
+  <div id="psOverlay">
+    <div id="psOverlayTitle">3D view not connected</div>
+    <div id="psOverlayDetail"></div>
+    <button id="psReconnectBtn" type="button">Reconnect</button>
+  </div>
+</div>
 
 <button id="panelToggle">&#8249;</button>
 <button id="recenterBtn" title="Recenter on my position">&#8982;</button>
+<button id="fullscreenBtn" aria-label="Enter fullscreen" title="Fullscreen">
+  <svg class="fs-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+  <svg class="fs-exit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>
+</button>
 
 <div id="panel">
  <div id="panelContent">
 
   <div id="mainView">
-    <div class="row">
+    <div id="topRow">
       <div id="statusPill">Disconnected</div>
+      <button id="streamToggleBtn" aria-label="Switch to 3D view">3D</button>
       <button id="connectBtn">Connect</button>
     </div>
 
@@ -149,7 +252,6 @@
       <button id="backupNowBtn" style="margin-left:6px; font-size:12px; padding:4px 10px; border:0; border-radius:6px; background:#2f7de1; color:#fff;">Back up now</button>
     </div>
     <div id="overflowWrap"></div>
-    <div class="waypoint" id="waypointText"></div>
 
     <div class="grid2">
       <div class="card">
@@ -162,16 +264,24 @@
         <div id="livePace">-- /500m</div>
         <div id="liveSpm">-- spm</div>
       </div>
-      <div class="card">
-        <div class="lbl">Route progress</div>
-        <div id="routeProgress">0 / 0 m</div>
-        <div id="routePercent">0%</div>
-      </div>
-      <div class="card">
-        <div class="lbl">Projected finish</div>
-        <div id="projEta">--</div>
-      </div>
     </div>
+
+    <section id="nextStops" aria-label="Next stops">
+      <div id="nsCard">
+        <div class="lbl">Next stop</div>
+        <div class="ns-head">
+          <div id="nsName">--</div>
+          <div id="nsKm"></div>
+        </div>
+        <div class="ns-bar" id="nsBar">
+          <div class="ns-track"></div>
+          <div id="nsFill"></div>
+          <div id="nsBoat"></div>
+        </div>
+        <div class="ns-foot"><span id="nsFrom"></span><span id="nsEta"></span></div>
+      </div>
+      <div id="nsLine"></div>
+    </section>
   </div>
 
   <div id="settingsView" style="display:none;">
@@ -182,13 +292,37 @@
       <button id="exportBtn">Export JSON</button>
       <button id="importBtn">Import JSON</button>
       <button id="resetBtn" class="danger">Reset all data</button>
-      <button id="fullscreenBtn" class="accent">Fullscreen</button>
       <button id="installBtn" class="accent" style="display:none;">Install app</button>
     </div>
 
     <div class="card" style="margin-top:12px; font-size:12px; color:#aaa; line-height:1.6;">
       <div id="backupInfo">No backup yet</div>
       <div id="persistInfo">Persistent storage: checking…</div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <div class="lbl">Map key (CARTO)</div>
+      <div style="font-size:12px; color:#888; margin:4px 0 8px;">
+        Removes the "API key required" marks from the map. Stored only on this device, never in the app's source.
+        Get a free key at <a href="https://carto.com/basemaps/apikey/" target="_blank" rel="noopener">carto.com/basemaps/apikey</a>.
+      </div>
+      <input id="cartoKeyInput" type="text" placeholder="Paste your CARTO basemaps key" autocomplete="off" spellcheck="false"
+             style="width:100%; box-sizing:border-box; background:#1c1c1e; border:1px solid #333; color:#eee; padding:9px 10px; border-radius:8px; font-size:14px;">
+      <div class="btnrow" style="margin-top:8px;">
+        <button id="saveCartoKeyBtn" class="accent">Save key</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <div class="lbl">3D view — PC address</div>
+      <div style="font-size:12px; color:#888; margin:4px 0 8px;">
+        Stored only on this device, never in the app's source. Find it on the streaming PC via <code>ipconfig</code> (Windows), under your Wi-Fi adapter's IPv4 address. Add a port only if the signalling server's HTTPS port isn't 443, e.g. <code>192.168.2.104:8443</code>.
+      </div>
+      <input id="streamHostInput" type="text" placeholder="e.g. 192.168.1.50"
+             style="width:100%; box-sizing:border-box; background:#1c1c1e; border:1px solid #333; color:#eee; padding:9px 10px; border-radius:8px; font-size:14px;">
+      <div class="btnrow" style="margin-top:8px;">
+        <button id="saveStreamHostBtn" class="accent">Save address</button>
+      </div>
     </div>
 
     <details>
@@ -208,6 +342,19 @@
   <div id="statsHeader">
     <button id="statsBack">&#8592;</button>
     <h2>Stats</h2>
+  </div>
+
+  <div class="card recordsGrid">
+    <div class="recordCard">
+      <div class="lbl">Route progress</div>
+      <div class="big" id="routePercent">0%</div>
+      <div class="sub" id="routeProgress">0 / 0 m</div>
+    </div>
+    <div class="recordCard">
+      <div class="lbl">Projected finish</div>
+      <div class="big" id="projEta">--</div>
+      <div class="sub" id="projEtaSub"></div>
+    </div>
   </div>
 
   <div class="card">
@@ -275,6 +422,26 @@ const log = m => { const el = $('log'); el.textContent += m + '\n'; el.scrollTop
 const SESSIONS_KEY = 'pm5_sessions_v1';
 const PENDING_KEY  = 'pm5_pending_v1';
 const LEGACY_TOTALS_KEY = 'pm5_totals_v1'; // from the very first prototype
+const STREAM_HOST_KEY = 'pm5_stream_host_v1'; // this device only -- never hardcoded, never committed
+const CARTO_KEY_KEY = 'pm5_carto_key_v1';      // map tile key: this device only, never in the repo
+
+function loadCartoKey() {
+  try { return localStorage.getItem(CARTO_KEY_KEY) || ''; }
+  catch (e) { return ''; }
+}
+function saveCartoKey(key) {
+  try { localStorage.setItem(CARTO_KEY_KEY, key); }
+  catch (e) { log('map key save failed: ' + e.message); }
+}
+
+function loadStreamHost() {
+  try { return localStorage.getItem(STREAM_HOST_KEY) || ''; }
+  catch (e) { return ''; }
+}
+function saveStreamHost(host) {
+  try { localStorage.setItem(STREAM_HOST_KEY, host); }
+  catch (e) { log('stream host save failed: ' + e.message); }
+}
 
 function loadSessions() {
   try {
@@ -382,7 +549,8 @@ function finalizePending(note) {
 /* =========================================================================
    BACKUPS — each file is a FULL snapshot of all sessions, so only the newest
    one ever matters. Import merges by session id, so importing an older or
-   duplicate backup never double-counts.
+   duplicate backup never double-counts. Device-only settings (CARTO key, PC
+   address) are deliberately not included.
    ========================================================================= */
 const BACKUP_META_KEY = 'pm5_backup_meta_v1';
 
@@ -502,8 +670,14 @@ async function loadRoute() {
 async function loadWaypoints() {
   try {
     const res = await fetch('waypoints.json', { cache: 'no-store' });
-    waypoints = await res.json();
+    const raw = await res.json();
+    // tier: 1 = city, 2 = town, 3 = village/small place. Entries without a
+    // tier (e.g. a hand-made file) simply show at the small size.
+    waypoints = (Array.isArray(raw) ? raw : [])
+      .filter(w => w && typeof w.name === 'string' && isFinite(w.distanceM))
+      .map(w => ({ ...w, tier: [1,2,3].includes(w.tier) ? w.tier : 3 }));
     waypoints.sort((a,b) => a.distanceM - b.distanceM);
+    log(`Waypoints loaded: ${waypoints.length}`);
   } catch (e) { log('waypoints load failed: ' + e.message); }
 }
 
@@ -529,11 +703,122 @@ function nearestWaypointBehind(d) {
 }
 
 /* =========================================================================
+   NEXT STOPS — bus-style display at the bottom of the panel: a card for the
+   next place, and a line underneath running bottom-up (the last passed place
+   at the bottom, you, then the coming places). Spacing between dots follows
+   the real distances, compressed so near places don't crowd and far ones
+   don't fall off the top.
+   ========================================================================= */
+let livePaceSec = null;      // current pace in s/500m, from the PM5 while rowing
+let lastNsTotal = 0;
+
+const escapeHtml = t => String(t).replace(/[&<>"']/g, c =>
+  ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const fmtKm = km => (Math.abs(km) < 10 ? Math.abs(km).toFixed(1) : String(Math.round(Math.abs(km))));
+
+function fmtEtaMinutes(sec) {
+  const min = Math.max(1, Math.round(sec / 60));
+  if (min < 60) return `≈ ${min} min at current pace`;
+  return `≈ ${Math.floor(min / 60)} h ${String(min % 60).padStart(2,'0')} min at current pace`;
+}
+
+function renderNextStops(totalMeters) {
+  lastNsTotal = totalMeters;
+  const passed = nearestWaypointBehind(totalMeters);
+  const upcoming = waypoints.filter(w => w.distanceM > totalMeters);
+  const next = upcoming[0];
+
+  // ---- card ----
+  if (!waypoints.length) {
+    $('nsName').textContent = 'No places listed';
+    $('nsKm').innerHTML = '';
+    $('nsBar').style.visibility = 'hidden';
+    $('nsFrom').textContent = 'Add places to waypoints.json to see them here';
+    $('nsEta').textContent = '';
+  } else if (!next) {
+    $('nsName').textContent = 'No more places';
+    $('nsKm').innerHTML = '';
+    $('nsBar').style.visibility = 'hidden';
+    $('nsFrom').textContent = passed ? `last: ${passed.name}` : '';
+    $('nsEta').textContent = '';
+  } else {
+    const remaining = next.distanceM - totalMeters;
+    const fromD = passed ? passed.distanceM : 0;
+    const pct = Math.max(0, Math.min(1, (totalMeters - fromD) / Math.max(1, next.distanceM - fromD))) * 100;
+    $('nsName').textContent = next.name;
+    $('nsKm').innerHTML = `${fmtKm(remaining / 1000)} <span class="u">km</span>`;
+    $('nsBar').style.visibility = 'visible';
+    $('nsFill').style.width = pct + '%';
+    $('nsBoat').style.left = pct + '%';
+    $('nsFrom').textContent = passed ? `from ${passed.name}` : 'from the start';
+    $('nsEta').textContent = (pending && livePaceSec > 0) ? fmtEtaMinutes(remaining / 500 * livePaceSec) : '';
+  }
+
+  // ---- line ----
+  const box = $('nsLine');
+  const H = box.clientHeight;
+  if (!H) return; // panel view hidden (settings open); redrawn when shown again
+  const GAP = 28, TOP = 14;
+  const passedY = H - 24;
+  const youY = passed ? passedY - 38 : H - 24;
+  const span = youY - TOP;
+  const cap = Math.max(2, Math.min(6, Math.floor(span / GAP)));
+  const list = upcoming.slice(0, cap);
+  const kms = list.map(w => (w.distanceM - totalMeters) / 1000);
+  const raw = kms.map(k => Math.pow(Math.max(k, 0.01), 0.55));
+  // scale against at least ~15 km, so a lone nearby place isn't stretched to the top
+  const last = Math.max(raw[raw.length - 1] || 0, Math.pow(15, 0.55));
+  const offs = raw.map(v => v / last * span);
+  for (let i = 0; i < offs.length; i++) {           // keep labels apart...
+    const prev = i === 0 ? 0 : offs[i - 1];
+    if (offs[i] - prev < GAP) offs[i] = prev + GAP;
+  }
+  for (let i = offs.length - 1; i >= 0; i--) {      // ...but never past the top
+    const lim = i === offs.length - 1 ? span : offs[i + 1] - GAP;
+    if (offs[i] > lim) offs[i] = lim;
+  }
+  const ys = offs.map(o => youY - o);
+  const topY = ys.length ? ys[ys.length - 1] : youY;
+
+  const seg = (top, h, bg) => `<div class="ns-seg" style="top:${top}px;height:${Math.max(0,h)}px;background:${bg}"></div>`;
+  const row = (y, cls, kmHtml, dotHtml, nameHtml) =>
+    `<div class="ns-row ${cls}" style="top:${y - 14}px"><div class="ns-km">${kmHtml}</div><div class="ns-dotwrap">${dotHtml}</div>${nameHtml}</div>`;
+
+  let html = '';
+  if (list.length) {
+    html += seg(Math.max(0, topY - 22), Math.min(22, topY), 'linear-gradient(rgba(58,110,168,0),#3a6ea8)');
+    html += seg(topY, youY - topY, '#3a6ea8');
+  }
+  if (passed) {
+    html += seg(youY, passedY - youY, '#5fd3a0');
+    html += seg(passedY, H - passedY, 'linear-gradient(#5fd3a0,rgba(95,211,160,0))');
+    const back = (totalMeters - passed.distanceM) / 1000;
+    html += row(passedY, 'passed', `${back >= 0.05 ? '−' : ''}${fmtKm(back)} <span class="u">km</span>`,
+                '<div class="ns-passed-dot"></div>', `<div class="ns-name">${escapeHtml(passed.name)}</div>`);
+  } else if (totalMeters > 0) {
+    html += seg(youY, H - youY, 'linear-gradient(#5fd3a0,rgba(95,211,160,0))');
+  }
+  list.forEach((w, i) => {
+    html += row(ys[i], i === 0 ? 'next' : '', `${fmtKm(kms[i])} <span class="u">km</span>`,
+                `<div class="ns-dot t${w.tier}"></div>`, `<div class="ns-name t${w.tier}">${escapeHtml(w.name)}</div>`);
+  });
+  html += row(youY, 'you', '', '<div class="ns-you-dot"></div>', '<div class="ns-you">You</div>');
+  box.innerHTML = html;
+}
+window.addEventListener('resize', () => renderNextStops(lastNsTotal));
+
+/* =========================================================================
    MAP
    ========================================================================= */
 const map = L.map('map', { zoomControl: false, minZoom: 5, maxZoom: 17 }).setView([50.11, 8.68], 12);
 
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+// Since late Aug 2026 CARTO stamps "API KEY REQUIRED" on tiles requested without
+// a key. The key comes from Settings (localStorage), never from this file.
+function cartoTileUrl(key) {
+  const base = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+  return key ? `${base}?key=${encodeURIComponent(key)}` : base;
+}
+const baseTiles = L.tileLayer(cartoTileUrl(loadCartoKey()), {
   subdomains: 'abcd',
   attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
   maxZoom: 20
@@ -605,11 +890,12 @@ function updateMapPosition(totalMeters) {
     overWrap.innerHTML = '';
   }
 
-  const wp = nearestWaypointBehind(totalMeters);
-  $('waypointText').textContent = wp ? `Last passed: ${wp.name}` : '';
+  renderNextStops(totalMeters);
 
   $('routeProgress').textContent = `${totalMeters.toFixed(0)} / ${routeLen.toFixed(0)} m`;
   $('routePercent').textContent = routeLen > 0 ? (totalMeters / routeLen * 100).toFixed(1) + '%' : '--';
+
+  sendDistanceToUnreal(totalMeters);
 }
 
 /* =========================================================================
@@ -651,6 +937,7 @@ function fmtDHM(totalSeconds) {
 
 function renderProjection(totalMeters) {
   const el = $('projEta');
+  $('projEtaSub').textContent = '';
   const starts = sessions.map(s => s.startTime).filter(Boolean);
   if (!starts.length || !routeLen) { el.textContent = 'Not enough data yet'; return; }
   const days = (Date.now() - Math.min(...starts)) / 86400000;
@@ -659,7 +946,151 @@ function renderProjection(totalMeters) {
   const remaining = routeLen - totalMeters;
   if (remaining <= 0) { el.textContent = 'Past mapped route end'; return; }
   const etaSeconds = (remaining / perDay) * 86400;
-  el.textContent = fmtDHM(etaSeconds) + '  (d:h:m)';
+  el.textContent = fmtDHM(etaSeconds);
+  $('projEtaSub').textContent = 'days:hours:minutes at your average daily distance';
+}
+
+/* =========================================================================
+   3D VIEW — Pixel Streaming from the Unreal boat scene. The PC's address
+   lives only in STREAM_HOST_KEY (localStorage, this device only); it is
+   never written into this file, since the file is public.
+   ========================================================================= */
+let pixelStreaming = null;
+let pixelStreamingModulePromise = null;
+
+function loadPixelStreamingModule() {
+  if (!pixelStreamingModulePromise) {
+    // Self-contained bundle of @epicgames-ps/lib-pixelstreamingfrontend-ue5.6@0.3.0
+    // (MIT) with its dependencies baked in. Loaded from the repo rather than a
+    // CDN, because jsDelivr's automatic ESM conversion breaks one of its deps.
+    pixelStreamingModulePromise = import('./vendor/pixelstreaming-ue5.6.js');
+  }
+  return pixelStreamingModulePromise;
+}
+
+async function ensurePixelStreaming() {
+  if (pixelStreaming) return pixelStreaming;
+  const host = loadStreamHost();
+  if (!host) { log('3D view: no PC address saved yet -- set it in Settings.'); return null; }
+
+  const { Config, PixelStreaming, TextParameters } = await loadPixelStreamingModule();
+  const config = new Config({
+    initialSettings: {
+      AutoConnect: false,     // we call connect() ourselves when the view opens
+      AutoPlayVideo: true,    // no play button exists in our UI, so it must autoplay
+      StartVideoMuted: true,  // muted autoplay is always allowed by browsers; there's no audio anyway
+      TimeoutIfIdle: false,   // AFK kick-out -- you never touch the stream while rowing
+      HoveringMouse: true,    // don't grab/lock the mouse pointer when testing on the PC
+      // Unreal renders at exactly the size of the visible stream area, so the
+      // picture fills it with no black bars, and re-renders when the panel moves.
+      MatchViewportRes: true,
+      // The area is measured in CSS pixels; the tablet has 2 screen pixels per CSS
+      // pixel. 1.5x is sharp without making the Wi-Fi stream needlessly heavy.
+      ViewportResScale: Math.min(window.devicePixelRatio || 1, 1.5)
+    }
+  });
+  // An https page (GitHub Pages) may only open secure websockets, so use wss://
+  // there. The host field may include a port, e.g. 192.168.2.104:8443.
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  config.setTextSetting(TextParameters.SignallingServerUrl, `${scheme}://${host}`);
+
+  pixelStreaming = new PixelStreaming(config);
+  psConnectCalled = false;
+  $('streamView').appendChild(pixelStreaming.videoElementParent);
+
+  const ps = pixelStreaming;
+  const pcHint = 'Check that Unreal and the signalling server are running on the PC.';
+  ps.addEventListener('webRtcConnecting', () => setPsState('connecting', `Connecting to ${host}…`));
+  ps.addEventListener('webRtcConnected', () => setPsState('connecting', 'Connected, waiting for the picture…'));
+  ps.addEventListener('streamReconnect', () => setPsState('connecting', 'Reconnecting…'));
+  ps.addEventListener('videoInitialized', () => { psFramesSeenAt = performance.now(); setPsState('live'); });
+  ps.addEventListener('webRtcFailed', () => setPsState('disconnected', `The video connection failed. ${pcHint}`));
+  ps.addEventListener('webRtcDisconnected', (e) => {
+    const why = (e && e.data && e.data.eventString) ? e.data.eventString.trim() + ' ' : '';
+    setPsState('disconnected', why + pcHint);
+  });
+  // Unreal may have been restarted and forgotten where the boat is: tell it right away.
+  ps.addEventListener('dataChannelOpen', () => sendDistanceToUnreal(lastNsTotal));
+  return pixelStreaming;
+}
+
+/* ---- live / not-live indicator --------------------------------------------
+   States: idle -> connecting -> live; live -> stalled (frames stop arriving) or
+   disconnected. Whenever it isn't live, an opaque overlay covers the video so a
+   frozen last frame can never pass for a live picture. */
+let psState = 'idle';
+let psConnectCalled = false;
+let psFramesSeenAt = 0, psLastFrameCount = -1;
+let lastPsLogLine = '';
+
+function setPsState(state, detail = '') {
+  psState = state;
+  const badge = { idle: 'Not connected', connecting: 'Connecting…', live: 'Live', stalled: 'No picture', disconnected: 'Disconnected' };
+  const title = { idle: '3D view not connected', connecting: 'Connecting to the 3D view…', stalled: 'No picture from Unreal', disconnected: '3D view disconnected' };
+  $('psBadge').dataset.state = state;
+  $('psBadgeText').textContent = badge[state];
+  $('psOverlay').hidden = state === 'live';
+  $('psOverlayTitle').textContent = title[state] || '';
+  $('psOverlayDetail').textContent = detail;
+  $('psReconnectBtn').hidden = state === 'connecting' || state === 'live';
+  const line = `3D view: ${badge[state]}${detail ? ' – ' + detail : ''}`;
+  if (line !== lastPsLogLine) { log(line); lastPsLogLine = line; }   // the library repeats some events
+}
+
+function psConnectOrReconnect() {
+  if (!pixelStreaming) return;
+  setPsState('connecting', `Connecting to ${loadStreamHost()}…`);
+  if (!psConnectCalled) { psConnectCalled = true; pixelStreaming.connect(); }
+  else pixelStreaming.reconnect();   // closes a half-dead connection first if needed
+}
+$('psReconnectBtn').addEventListener('click', psConnectOrReconnect);
+
+// Frame watchdog: counts decoded video frames once a second. If Unreal stops
+// sending pictures without a clean disconnect, the badge says so within ~4 s.
+setInterval(() => {
+  if (!pixelStreaming || !showingStream) return;
+  const v = $('streamView').querySelector('video');
+  if (!v) return;
+  const q = v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality() : null;
+  const count = q ? q.totalVideoFrames : Math.floor(v.currentTime * 30);
+  const now = performance.now();
+  if (count !== psLastFrameCount) {
+    psLastFrameCount = count;
+    psFramesSeenAt = now;
+    if (psState === 'stalled') setPsState('live');
+  } else if (psState === 'live' && now - psFramesSeenAt > 4000) {
+    setPsState('stalled', 'Unreal stopped sending pictures. Is the game still running on the PC?');
+  }
+}, 1000);
+
+let showingStream = false;
+async function toggleStreamView() {
+  if (!showingStream && !loadStreamHost()) {
+    log('3D view: set a PC address in Settings first.');
+    alert("Set the PC's address in Settings first (gear icon -> 3D view -- PC address).");
+    return;
+  }
+
+  showingStream = !showingStream;
+  $('map').style.display = showingStream ? 'none' : 'block';
+  $('streamView').classList.toggle('shown', showingStream);
+  $('recenterBtn').style.display = showingStream ? 'none' : '';   // map-only control
+  $('streamToggleBtn').textContent = showingStream ? '2D' : '3D';
+  $('streamToggleBtn').classList.toggle('active', showingStream);
+  $('streamToggleBtn').setAttribute('aria-label', showingStream ? 'Switch to 2D map' : 'Switch to 3D view');
+
+  if (showingStream) {
+    psFramesSeenAt = performance.now();               // don't call it stalled while it was hidden
+    const stream = await ensurePixelStreaming();
+    if (stream && (psState === 'idle' || psState === 'disconnected')) psConnectOrReconnect();
+  }
+}
+$('streamToggleBtn').addEventListener('click', toggleStreamView);
+
+// Called every time total distance changes -- see updateMapPosition above.
+// Safe to call before the stream connects; it's a no-op until then.
+function sendDistanceToUnreal(distanceMeters) {
+  if (pixelStreaming) pixelStreaming.emitUIInteraction({ distance: distanceMeters });
 }
 
 /* =========================================================================
@@ -708,6 +1139,7 @@ function onAdd1(e) {
   const strokeRate = dv.getUint8(5);
   const hr = dv.getUint8(6);
   const currentPace = u16(dv,7) / 100;  // seconds per 500m
+  livePaceSec = currentPace > 0 ? currentPace : null;
   const avgPace = u16(dv,9) / 100;      // seconds per 500m — this is the field session records need
   pending.strokeRate = strokeRate;
   pending.heartRate = hr === 255 ? null : hr;
@@ -738,6 +1170,7 @@ async function connect() {
       $('statusPill').textContent = 'Disconnected';
       $('statusPill').classList.remove('on');
       $('connectBtn').disabled = false;
+      livePaceSec = null;
       finalizePending('Disconnected from PM5');
       releaseWakeLock();
       log('Disconnected');
@@ -790,8 +1223,10 @@ $('resetBtn').addEventListener('click', () => {
   saveSessions(sessions);
   pending = null;
   savePending(null);
+  try { localStorage.removeItem(BACKUP_META_KEY); } catch (e) {}
   renderSessionMarkers();
   renderTotals();
+  renderBackupStatus();
   log('All data reset.');
 });
 
@@ -802,6 +1237,27 @@ $('exportBtn').addEventListener('click', () => {
   renderTotals();
 });
 $('backupNowBtn').addEventListener('click', () => downloadBackup('manual'));
+
+$('cartoKeyInput').value = loadCartoKey();
+$('saveCartoKeyBtn').addEventListener('click', () => {
+  const key = $('cartoKeyInput').value.trim();
+  saveCartoKey(key);
+  baseTiles.setUrl(cartoTileUrl(key));   // reloads the map tiles right away, no page reload needed
+  log(key ? 'Map key saved; map tiles reloaded.' : 'Map key cleared.');
+});
+
+$('streamHostInput').value = loadStreamHost();
+$('saveStreamHostBtn').addEventListener('click', () => {
+  const host = $('streamHostInput').value.trim();
+  saveStreamHost(host);
+  if (pixelStreaming) {               // close the old connection and remove its video
+    try { pixelStreaming.disconnect(); } catch (e) {}
+    pixelStreaming.videoElementParent.remove();
+  }
+  pixelStreaming = null;              // a fresh connection with the new address next time
+  setPsState('idle');
+  log('3D view address saved: ' + (host || '(cleared)'));
+});
 
 $('importBtn').addEventListener('click', () => $('importFile').click());
 $('importFile').addEventListener('change', async (e) => {
@@ -819,6 +1275,7 @@ $('importFile').addEventListener('change', async (e) => {
     saveSessions(sessions);
     renderSessionMarkers();
     renderTotals();
+    renderBackupStatus();
     log(`Imported: ${added} new session(s), ${incoming.length - added} already present.`);
   } catch (err) {
     log('Import failed: ' + err.message);
@@ -831,13 +1288,18 @@ $('importFile').addEventListener('change', async (e) => {
    ========================================================================= */
 const panelEl = $('panel'), toggleEl = $('panelToggle');
 function positionToggle() {
-  toggleEl.style.left = panelEl.classList.contains('collapsed') ? '0px' : panelEl.offsetWidth + 'px';
+  const edge = panelEl.classList.contains('collapsed') ? '0px' : panelEl.offsetWidth + 'px';
+  toggleEl.style.left = edge;
+  $('streamView').style.left = edge;   // slides with the panel (same 0.22s transition)
 }
 toggleEl.addEventListener('click', () => {
   panelEl.classList.toggle('collapsed');
   toggleEl.innerHTML = panelEl.classList.contains('collapsed') ? '&#8250;' : '&#8249;';
   positionToggle();
   setTimeout(() => {
+    // The stream library only re-measures on window resize; the panel moving
+    // isn't one, so nudge it, and Unreal re-renders at the new size.
+    window.dispatchEvent(new Event('resize'));
     map.invalidateSize();
     if (followMode && lastKnownPoint) map.setView(computeFollowCenter(lastKnownPoint), map.getZoom(), { animate: true });
   }, 230); // after the CSS transition
@@ -845,9 +1307,10 @@ toggleEl.addEventListener('click', () => {
 window.addEventListener('resize', positionToggle);
 
 function showSettings(show) {
-  $('mainView').style.display = show ? 'none' : 'block';
+  $('mainView').style.display = show ? 'none' : '';       // '' = back to the stylesheet's flex layout
   $('settingsView').style.display = show ? 'block' : 'none';
-  $('panelFooter').style.display = show ? 'none' : 'block';
+  $('panelFooter').style.display = show ? 'none' : '';
+  if (!show) renderNextStops(lastNsTotal);                 // the line can't measure itself while hidden
 }
 $('settingsBtn').addEventListener('click', () => showSettings(true));
 $('backBtn').addEventListener('click', () => showSettings(false));
@@ -892,6 +1355,15 @@ $('fullscreenBtn').addEventListener('click', () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else document.documentElement.requestFullscreen().catch(e => log('Fullscreen failed: ' + e.message));
 });
+// Keep the icon in sync however fullscreen is entered or left (button, back gesture, app switch).
+function syncFullscreenBtn() {
+  const full = !!document.fullscreenElement;
+  $('fullscreenBtn').classList.toggle('is-full', full);
+  $('fullscreenBtn').setAttribute('aria-label', full ? 'Exit fullscreen' : 'Enter fullscreen');
+}
+document.addEventListener('fullscreenchange', syncFullscreenBtn);
+// Browsers without the Fullscreen API: the button would do nothing, so hide it.
+if (!document.fullscreenEnabled) $('fullscreenBtn').style.display = 'none';
 
 let deferredInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', (e) => {
